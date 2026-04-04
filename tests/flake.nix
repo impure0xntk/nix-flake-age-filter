@@ -17,6 +17,7 @@ Usage:
       inherit (age-filter.lib) checkAllInputs mkAgeCheck checkInputAge daysToSeconds mkChecks;
       referenceTime = self.lastModified or 0;
       pkgs = nixpkgs.legacyPackages.x86_64-linux;
+      cli = age-filter.packages.x86_64-linux.default;
     in
     {
       # テスト 1: daysToSeconds ユーティリティ関数のテスト
@@ -273,19 +274,19 @@ Usage:
           touch $out
         '';
 
-      # テスト 11: minAgeDays=7 で zeroclaw (6日) が失敗することを確認
-      checks.x86_64-linux.test-expect-fail-minAgeDays-7 =
+      # テスト 11: minAgeDays=8 で zeroclaw (7日) が失敗することを確認
+      checks.x86_64-linux.test-expect-fail-minAgeDays-8 =
         let
           result = checkInputAge {
             input = zeroclaw;
-            minAgeDays = 7; # zeroclaw (6日) より大きい
+            minAgeDays = 8; # zeroclaw (7日) より大きい
             referenceTime = referenceTime;
           };
         in
-        pkgs.runCommand "test-expect-fail-minAgeDays-7" {} ''
+        pkgs.runCommand "test-expect-fail-minAgeDays-8" {} ''
           echo "=== Test: checkInputAge should FAIL when minAgeDays > actual age ==="
           echo "zeroclaw age: ${builtins.toString result.ageDays} days"
-          echo "minAgeDays: 7"
+          echo "minAgeDays: 8"
           echo ""
           echo "Result:"
           echo "  ok: ${builtins.toJSON result.ok}"
@@ -293,8 +294,78 @@ Usage:
           echo ""
           ${if result.ok
             then "echo 'FAIL: checkInputAge unexpectedly returned ok=true' && exit 1"
-            else "echo 'PASS: checkInputAge correctly returned ok=false (age ${builtins.toString result.ageDays} < 7)'"
+            else "echo 'PASS: checkInputAge correctly returned ok=false (age ${builtins.toString result.ageDays} < 8)'"
           }
+          touch $out
+        '';
+
+      # ===== ここからCLIのテスト =====
+      cli = age-filter.packages.x86_64-linux.default;
+
+      # テスト 12: CLI --help が正常に出力される
+      checks.x86_64-linux.test-cli-help =
+        pkgs.runCommand "test-cli-help" {} ''
+          echo "=== Test: CLI --help ==="
+          output=$(${cli}/bin/nix-flake-age --help 2>&1)
+          echo "$output"
+          echo ""
+          if echo "$output" | grep -q "verify"; then
+            echo "PASS: help mentions verify command"
+          else
+            echo "FAIL: help does not mention verify command"
+            exit 1
+          fi
+          if echo "$output" | grep -q "update"; then
+            echo "PASS: help mentions update command"
+          else
+            echo "FAIL: help does not mention update command"
+            exit 1
+          fi
+          touch $out
+        '';
+
+      # テスト 13: CLI verify --help が正常に出力される
+      checks.x86_64-linux.test-cli-verify-help =
+        pkgs.runCommand "test-cli-verify-help" {} ''
+          echo "=== Test: CLI verify --help ==="
+          output=$(${cli}/bin/nix-flake-age verify --help 2>&1)
+          echo "$output"
+          echo ""
+          if echo "$output" | grep -q "min-age"; then
+            echo "PASS: verify help mentions --min-age"
+          else
+            echo "FAIL: verify help does not mention --min-age"
+            exit 1
+          fi
+          touch $out
+        '';
+
+      # テスト 14: CLI update --help が正常に出力される
+      checks.x86_64-linux.test-cli-update-help =
+        pkgs.runCommand "test-cli-update-help" {} ''
+          echo "=== Test: CLI update --help ==="
+          output=$(${cli}/bin/nix-flake-age update --help 2>&1)
+          echo "$output"
+          echo ""
+          if echo "$output" | grep -q "min-age"; then
+            echo "PASS: update help mentions --min-age"
+          else
+            echo "FAIL: update help does not mention --min-age"
+            exit 1
+          fi
+          touch $out
+        '';
+
+      # テスト 15: CLI 未知のコマンドでエラー終了
+      checks.x86_64-linux.test-cli-unknown-command =
+        pkgs.runCommand "test-cli-unknown-command" {} ''
+          echo "=== Test: CLI unknown command ==="
+          if ${cli}/bin/nix-flake-age foobar 2>&1; then
+            echo "FAIL: unknown command should exit non-zero"
+            exit 1
+          else
+            echo "PASS: unknown command exits non-zero"
+          fi
           touch $out
         '';
     };

@@ -95,6 +95,75 @@
           };
         });
 
+      # Build a CLI package that wraps verify and update scripts
+      mkCliPackage = system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          python = pkgs.python3.withPackages (ps: with ps; [
+            requests
+            rich
+            pygit2
+          ]);
+
+          # Copy Python scripts into a derivation
+          src = pkgs.stdenv.mkDerivation {
+            name = "nix-flake-age-cli-src";
+            phases = [ "installPhase" ];
+            installPhase = ''
+              mkdir -p $out/libexec
+              cp ${./src/flake_age_common.py} $out/libexec/flake_age_common.py
+              cp ${./src/nix_flake_age_verify.py} $out/libexec/nix_flake_age_verify.py
+              cp ${./src/nix_flake_age_update.py} $out/libexec/nix_flake_age_update.py
+            '';
+          };
+
+          # Main entry point: dispatch to subcommands
+          cliScript = pkgs.writeShellScript "nix-flake-age" ''
+            #!/usr/bin/env bash
+            set -euo pipefail
+
+            USAGE="Usage: nix-flake-age <command> [options]
+
+            Commands:
+              verify    Verify flake input ages against a minimum threshold
+              update    Update flake inputs but only adopt commits >= min-age
+
+            Use 'nix-flake-age <command> --help' for more information."
+
+            command="''${1:-}"
+            shift || true
+
+            case "$command" in
+              verify)
+                exec ${python.interpreter} ${src}/libexec/nix_flake_age_verify.py "$@"
+                ;;
+              update)
+                exec ${python.interpreter} ${src}/libexec/nix_flake_age_update.py "$@"
+                ;;
+              -h|--help|help)
+                echo "$USAGE"
+                exit 0
+                ;;
+              "")
+                echo "Error: no command specified" >&2
+                echo "$USAGE" >&2
+                exit 1
+                ;;
+              *)
+                echo "Error: unknown command '$command'" >&2
+                echo "$USAGE" >&2
+                exit 1
+                ;;
+            esac
+          '';
+        in
+        pkgs.writeShellApplication {
+          name = "nix-flake-age";
+          runtimeInputs = [ pkgs.git pkgs.nix ];
+          text = builtins.readFile cliScript;
+          meta.mainProgram = "nix-flake-age";
+        };
+
     in
     {
       # Public API: library functions for other flakes to use
@@ -109,6 +178,17 @@
         inherit checkInputAge checkAllInputs mkAgeCheck mkChecks daysToSeconds;
       };
 
+      # CLI packages for nix run
+      packages = lib.genAttrs nixpkgs.lib.systems.flakeExposed (system: {
+        default = mkCliPackage system;
+        nix-flake-age = mkCliPackage system;
+      });
+
+      # Also provide legacyPackages for convenience
+      legacyPackages = lib.mapAttrs (_: system: {
+        nix-flake-age = mkCliPackage system;
+      }) nixpkgs.legacyPackages;
+
       # Self-check: verify this flake's own inputs
       checks = let
         minAgeDays = 3;
@@ -119,5 +199,18 @@
           inherit minAgeDays referenceTime;
           excludeInputs = [ "self" "nixpkgs" ];
         };
+
+      # Also expose verify via nix checks for CLI package
+      apps = lib.genAttrs nixpkgs.lib.systems.flakeExposed (system: {
+        default = {
+          type = "app";
+          program = "${self.packages.${system}.default}/bin/nix-flake-age";
+        };
+      });
+
+      # Development shell — delegates to shell.nix
+      devShells = lib.genAttrs nixpkgs.lib.systems.flakeExposed (system: {
+        default = nixpkgs.legacyPackages.${system}.callPackage ./shell.nix { };
+      });
     };
 }
