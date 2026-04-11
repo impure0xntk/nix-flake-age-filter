@@ -1,4 +1,4 @@
-"""flake.lock のパース。"""
+"""Parsing flake.lock."""
 
 from __future__ import annotations
 

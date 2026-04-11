@@ -3,9 +3,11 @@
 let
   python = pkgs.python3.withPackages (ps: with ps; [
     pytest
-    requests
+    pygithub
     rich
     pygit2
+    typer
+    whenever
   ]);
 
   src = ./src;

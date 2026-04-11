@@ -298,10 +298,15 @@ def resolve_default_ref(git_url: str, ref: str | None, timeout: int = 15) -> str
         timeout=timeout,
     )
     if rc == 0 and stdout.strip():
-        # Output: "ref: refs/heads/main\tHEAD\n<sha>\tHEAD"
-        first_line = stdout.splitlines()[0]
-        if first_line.startswith("ref: refs/heads/"):
-            return first_line[len("ref: refs/heads/"):]
+        # Output format:
+        #   ref: refs/heads/main\tHEAD\n<sha>\tHEAD
+        # Parse by splitting on tab, then extracting branch name
+        for line in stdout.splitlines():
+            if line.startswith("ref: refs/heads/"):
+                # line is: "ref: refs/heads/main\tHEAD"
+                ref_part = line.split("\t")[0]  # "ref: refs/heads/main"
+                if ref_part.startswith("ref: refs/heads/"):
+                    return ref_part[len("ref: refs/heads/"):]
 
     # GitHub fallback
     parsed = _parse_github_url(git_url)
@@ -470,10 +475,12 @@ def _github_api_find_at_cutoff(
 
 def _find_via_pygit2(
     git_url: str, ref: str, min_age_days: int, cutoff_ts: int, timeout: int,
+    use_git_fallback: bool = False,
 ) -> dict:
     """
     Fallback for non-GitHub hosts using pygit2 (libgit2).
     Replaces subprocess git with in-process operations — no git binary needed.
+    Falls back to subprocess git if pygit2 fails.
     ``ref`` should already be resolved by ``resolve_default_ref``.
     """
     now = datetime.now(tz=timezone.utc)

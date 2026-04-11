@@ -20,7 +20,7 @@ Usage:
       cli = age-filter.packages.x86_64-linux.default;
     in
     {
-      # テスト 1: daysToSeconds ユーティリティ関数のテスト
+      # Test 1: Test the daysToSeconds utility function
       checks.x86_64-linux.test-daysToSeconds =
         let
           threeDays = daysToSeconds 3;
@@ -38,7 +38,7 @@ Usage:
           touch $out
         '';
 
-      # テスト 2: checkInputAge で zeroclaw の年齢チェック
+      # Test 2: Check zeroclaw age with checkInputAge
       checks.x86_64-linux.test-checkInputAge-zeroclaw =
         let
           result = checkInputAge {
@@ -62,7 +62,7 @@ Usage:
           touch $out
         '';
 
-      # テスト 3: checkAllInputs で全入力の一括チェック
+      # Test 3: Batch check all inputs with checkAllInputs
       checks.x86_64-linux.test-checkAllInputs =
         let
           result = checkAllInputs {
@@ -84,7 +84,7 @@ Usage:
           touch $out
         '';
 
-      # テスト 4: mkAgeCheck で生成スクリプトの実行
+      # Test 4: Execute the generated script from mkAgeCheck
       checks.x86_64-linux.test-mkAgeCheck-zeroclaw = mkAgeCheck {
         inputs = { zeroclaw = zeroclaw; };
         minAgeDays = 0;
@@ -93,7 +93,7 @@ Usage:
         excludeInputs = [ "self" ];
       };
 
-      # テスト 5: 異なる minAgeDays でのチェック (zeroclaw の年齢を取得)
+      # Test 5: Check with different minAgeDays (get zeroclaw age)
       checks.x86_64-linux.test-zeroclaw-age-report =
         let
           result = checkInputAge {
@@ -108,7 +108,7 @@ Usage:
           echo "referenceTime: ${toString referenceTime}"
           echo "zeroclaw lastModified: ${toString (zeroclaw.lastModified or 0)}"
           
-          # 計算の検証
+          # Verify calculation
           timeDiff=$(( ${toString referenceTime} - ${toString (zeroclaw.lastModified or 0)} ))
           calculatedDays=$(( timeDiff / 86400 ))
           echo "calculated age from timestamps: ''${calculatedDays} days"
@@ -122,12 +122,12 @@ Usage:
           fi
         '';
 
-      # テスト 6: excludeInputs のテスト
+      # Test 6: Test excludeInputs
       checks.x86_64-linux.test-excludeInputs =
         let
           result = checkAllInputs {
             inputs = self.inputs;
-            minAgeDays = 99999; # 非常に大きな値で全てfailさせる
+            minAgeDays = 99999; # Use a very large value to force all to fail
             referenceTime = referenceTime;
             excludeInputs = [ "self" "zeroclaw" "nixpkgs" "age-filter" ];
           };
@@ -144,18 +144,18 @@ Usage:
           touch $out
         '';
 
-      # ===== ここから「失敗することが期待される」テスト =====
-      # zeroclaw は現在 6日齢。minAgeDays=100 で確実に失敗させる。
+      # ===== Expect-fail tests start here =====
+      # zeroclaw is currently 6 days old. Force failure with minAgeDays=100.
 
-      # テスト 7: checkInputAge が失敗を返すことを確認 (expect-fail)
+      # Test 7: Verify checkInputAge returns failure (expect-fail)
       checks.x86_64-linux.test-expect-fail-checkInputAge-too-recent =
         let
           result = checkInputAge {
             input = zeroclaw;
-            minAgeDays = 100; # zeroclaw (6日) より十分大きい値
+            minAgeDays = 100; # Significantly larger than zeroclaw (6 days)
             referenceTime = referenceTime;
           };
-          # このテストは result.ok == false であることを確認する
+          # This test verifies that result.ok == false
           expectedFail = !result.ok;
           actualErrorMsg = result.error or "";
         in
@@ -172,7 +172,7 @@ Usage:
             then "echo 'FAIL: checkInputAge unexpectedly returned ok=true' && exit 1"
             else "echo 'PASS: checkInputAge correctly returned ok=false'"
           }
-          # checkInputAgeのエラーメッセージには "is only ...d old" が含まれる
+          # checkInputAge error message should contain "is only ...d old"
           ${if builtins.match ".*is only.*" actualErrorMsg != null
             then "echo 'PASS: error message indicates the input is too young'"
             else "echo 'FAIL: error message does not indicate the input is too young' && exit 1"
@@ -186,14 +186,14 @@ Usage:
           touch $out
         '';
 
-      # テスト 8: checkAllInputs が失敗を返すことを確認 (expect-fail)
+      # Test 8: Verify checkAllInputs returns failure (expect-fail)
       checks.x86_64-linux.test-expect-fail-checkAllInputs-too-recent =
         let
           result = checkAllInputs {
             inputs = self.inputs;
-            minAgeDays = 100; # zeroclaw (6日) が失敗する
+            minAgeDays = 100; # zeroclaw (6 days) will fail
             referenceTime = referenceTime;
-            excludeInputs = [ "self" ]; # zeroclaw を除外しない
+            excludeInputs = [ "self" ]; # Do not exclude zeroclaw
           };
         in
         pkgs.runCommand "test-expect-fail-checkAllInputs-too-recent" {} ''
@@ -222,19 +222,19 @@ Usage:
           touch $out
         '';
 
-      # テスト 9: mkAgeCheck が exit 1 のスクリプトを生成することを確認 (expect-fail)
-      # → checks に配置すると nix flake check が失敗するため packages に移動
+      # Test 9: Verify mkAgeCheck generates a script that exits with code 1 (expect-fail)
+      # Moved to packages because placing in checks would cause nix flake check to fail
       packages.x86_64-linux.test-expect-fail-mkAgeCheck-script-exits-fail =
         let
           script = mkAgeCheck {
             inputs = { zeroclaw = zeroclaw; };
-            minAgeDays = 100; # 確実に失敗
+            minAgeDays = 100; # Guaranteed to fail
             referenceTime = referenceTime;
             system = "x86_64-linux";
             excludeInputs = [ "self" ];
           };
         in
-        # スクリプトを生成確認するだけで実行はしない
+        # Only verify script generation, do not execute
         pkgs.runCommand "verify-mkAgeCheck-script-exits-fail" {} ''
           echo "=== Test: mkAgeCheck should produce a failing script ==="
           echo "Script path: ${script}"
@@ -246,17 +246,17 @@ Usage:
           touch $out
         '';
 
-      # テスト 10: 境界値テスト — ちょうど minAgeDays と同じ年齢の場合
-      # zeroclaw は約6日齢なので、minAgeDays=6 では PASS、minAgeDays=7 では FAIL
+      # Test 10: Boundary test — when age exactly equals minAgeDays
+      # zeroclaw is ~6 days old, so minAgeDays=6 should PASS, minAgeDays=7 should FAIL
       checks.x86_64-linux.test-boundary-exactly-at-threshold =
         let
-          # まず年齢を取得
+          # First get the age
           baseline = checkInputAge {
             input = zeroclaw;
             minAgeDays = 0;
             referenceTime = referenceTime;
           };
-          # その年齢を minAgeDays に設定して再チェック
+          # Re-check using that age as minAgeDays
           result = checkInputAge {
             input = zeroclaw;
             minAgeDays = baseline.ageDays;
@@ -274,12 +274,12 @@ Usage:
           touch $out
         '';
 
-      # テスト 11: minAgeDays=8 で zeroclaw (7日) が失敗することを確認
+      # Test 11: Verify zeroclaw (7 days) fails with minAgeDays=8
       checks.x86_64-linux.test-expect-fail-minAgeDays-8 =
         let
           result = checkInputAge {
             input = zeroclaw;
-            minAgeDays = 8; # zeroclaw (7日) より大きい
+            minAgeDays = 8; # Larger than zeroclaw (7 days)
             referenceTime = referenceTime;
           };
         in
@@ -299,10 +299,10 @@ Usage:
           touch $out
         '';
 
-      # ===== ここからCLIのテスト =====
+      # ===== CLI tests start here =====
       cli = age-filter.packages.x86_64-linux.default;
 
-      # テスト 12: CLI --help が正常に出力される
+      # Test 12: CLI --help outputs normally
       checks.x86_64-linux.test-cli-help =
         pkgs.runCommand "test-cli-help" {} ''
           echo "=== Test: CLI --help ==="
@@ -324,7 +324,7 @@ Usage:
           touch $out
         '';
 
-      # テスト 13: CLI verify --help が正常に出力される
+      # Test 13: CLI verify --help outputs normally
       checks.x86_64-linux.test-cli-verify-help =
         pkgs.runCommand "test-cli-verify-help" {} ''
           echo "=== Test: CLI verify --help ==="
@@ -340,7 +340,7 @@ Usage:
           touch $out
         '';
 
-      # テスト 14: CLI update --help が正常に出力される
+      # Test 14: CLI update --help outputs normally
       checks.x86_64-linux.test-cli-update-help =
         pkgs.runCommand "test-cli-update-help" {} ''
           echo "=== Test: CLI update --help ==="
@@ -356,7 +356,7 @@ Usage:
           touch $out
         '';
 
-      # テスト 15: CLI 未知のコマンドでエラー終了
+      # Test 15: CLI exits with error on unknown command
       checks.x86_64-linux.test-cli-unknown-command =
         pkgs.runCommand "test-cli-unknown-command" {} ''
           echo "=== Test: CLI unknown command ==="

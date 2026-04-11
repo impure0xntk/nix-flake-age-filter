@@ -15,8 +15,9 @@ import subprocess
 import sys
 import shutil
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
+
+from whenever import Instant
 
 from rich.console import Console
 from rich.table import Table
@@ -126,8 +127,8 @@ def gh_get_commit_timestamp(owner: str, repo: str, rev: str, timeout: int = 20) 
         return {"ok": False, "timestamp": None, "error": "empty response from gh api"}
 
     try:
-        dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-        return {"ok": True, "timestamp": int(dt.timestamp()), "error": None}
+        inst = Instant.parse_iso(date_str)
+        return {"ok": True, "timestamp": inst.timestamp(), "error": None}
     except (ValueError, TypeError) as e:
         return {"ok": False, "timestamp": None, "error": f"invalid date format: {e}"}
 
@@ -289,16 +290,16 @@ def fetch_commit_timestamp_via_bare(
         return {"ok": False, "timestamp": None, "error": "no committer line found in commit object"}
 
 
-def check_age(timestamp: int, min_age_days: int, now: datetime) -> dict:
+def check_age(timestamp: int, min_age_days: int, now: Instant) -> dict:
     """Check if the commit meets the minimum age requirement."""
-    commit_time = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+    commit_time = Instant.from_timestamp(timestamp)
     age_seconds = (now - commit_time).total_seconds()
     age_days = int(age_seconds / 86400)
 
     return {
         "ok": age_days >= min_age_days,
         "age_days": age_days,
-        "commit_date": commit_time.strftime("%Y-%m-%d %H:%M UTC"),
+        "commit_date": str(commit_time).replace("T", " ").rsplit(".", 1)[0] + " UTC",
         "error": None if age_days >= min_age_days
                  else f"commit is only {age_days}d old (minimum: {min_age_days}d)",
     }
@@ -361,7 +362,7 @@ def main():
         print("No locked inputs found in flake.lock.", file=sys.stderr)
         sys.exit(0)
 
-    now = datetime.now(tz=timezone.utc)
+    now = Instant.now()
     results: list[dict] = []
 
     if not args.json_output:

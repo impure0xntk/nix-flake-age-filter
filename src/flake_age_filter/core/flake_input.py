@@ -1,6 +1,6 @@
-"""FlakeInput ドメインモデル。
+"""FlakeInput domain model.
 
-flake.lock 内の input を表現し、URL 変換・ref 解決などの責務を持つ。
+Represents inputs in flake.lock, with responsibilities for URL conversion and ref resolution.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class FlakeInput:
-    """flake.lock 内の1つの input を表す。"""
+    """Represents a single input in flake.lock."""
 
     name: str
     locked: dict

@@ -1,107 +1,105 @@
-# アーキテクチャ設計ドキュメント
+# Architecture Design Document
 
-## 概要
+## Overview
 
-Nix Flake の `flake.lock` に入っている各 input のコミット日付を検証し、指定日数以上の古いコミットのみを許可するツール。
-npm の `min-release-age` に相当する概念を Nix エコシステムに提供する。
+A tool that validates the commit dates of each input in a Nix Flake's `flake.lock`, allowing only commits older than a specified number of days.
+This provides a concept equivalent to npm's `min-release-age` for the Nix ecosystem.
 
-2つのサブコマンドを提供する：
+It provides two subcommands:
 
-| サブコマンド | 説明 |
+| Subcommand | Description |
 |-------------|------|
-| `verify` | 既存の `flake.lock` の input が最小経過日数を満たしているか検証 |
-| `update` | `nix flake update` のラッパーとして、最小経過日数を満たすコミットのみを採用 |
+| `verify` | Validates whether existing `flake.lock` inputs meet the minimum age requirement |
+| `update` | Wraps `nix flake update` to adopt only commits that meet the minimum age requirement |
 
-## ディレクトリ構造
+## Directory Structure
 
 ```
 nix-flake-age-filter/
-├── pyproject.toml              # パッケージ定義、依存関係、エントリポイント
+├── pyproject.toml              # Package definition, dependencies, entry points
 ├── README.md
+├── flake.nix                   # Nix flake definition
+├── shell.nix                   # Development shell
 ├── docs/
-│   └── design.md               # 本ファイル
+│   └── design.md               # This file
 ├── src/
-│   └── flake_age_filter/
-│       ├── __init__.py         # バージョン情報
-│       ├── __main__.py         # CLI エントリポイント (click)
-│       ├── cli/
-│       │   ├── verify.py       # verify サブコマンドの定義
-│       │   └── update.py       # update サブコマンドの定義
-│       ├── core/
-│       │   ├── flake_input.py  # FlakeInput ドメインモデル
-│       │   ├── lock_file.py    # flake.lock のパース・バリデーション
-│       │   ├── age_check.py    # コミット年齢の判定ロジック
-│       │   └── errors.py       # カスタム例外クラス
-│       ├── git_ops/
-│       │   ├── client.py       # GitClient プロトコル（インターフェース定義）
-│       │   ├── github_api.py   # GitHub REST API によるコミット情報取得
-│       │   └── libgit2.py      # pygit2 による汎用 git リポジトリ操作
-│       └── output/
-│           └── formatters.py   # 出力の整形（rich テーブル / JSON）
+│   ├── flake_age_common.py     # Legacy: Shared utilities (single-file version)
+│   ├── nix_flake_age_filter.py # Legacy: verify subcommand (argparse-based)
+│   ├── nix_flake_age_update.py # Legacy: update subcommand (argparse-based)
+│   ├── flake_age_types.py     # New: Typed dataclasses (FetchResult, CommitSearchResult, etc.)
+│   ├── age_check.py            # New: Age validation utilities (whenever-based)
+│   ├── flake_lock.py           # New: flake.lock parsing and FlakeInput model
+│   ├── git_operations.py       # New: Git CLI operations (ls-remote, fetch)
+│   └── flake_age_filter/       # New: Modular package (WIP)
+│       └── __init__.py         # Package init with version
 ├── tests/
-│   ├── test_flake_input.py
-│   ├── test_lock_file.py
-│   └── test_age_check.py
-└── scripts/
-    └── flake-age               # CLI ラッパー（インストール不要な代替経路）
+│   └── (test files)
+└── result                      # Nix build output (gitignored)
 ```
 
-## 依存関係
+### Implementation Status
 
-| パッケージ | 用途 |
-|-----------|------|
-| `click` | CLI フレームワーク（サブコマンド、引数パース） |
-| `rich` | コンソール出力の整形（テーブル、色付きテキスト） |
-| `pygit2` | git リポジトリ操作（libgit2 バインディング） |
-| `PyGithub` | GitHub REST API クライアント（コミット情報取得） |
+| Component | Status | Notes |
+|-----------|--------|-------|
+| `flake_age_common.py` | Stable | Legacy single-file implementation |
+| `nix_flake_age_filter.py` | Stable | Uses `whenever` for datetime, argparse CLI |
+| `nix_flake_age_update.py` | Stable | Legacy implementation with argparse |
+| `flake_age_types.py` | New | Typed dataclasses for result objects |
+| `flake_age_filter/` | WIP | Modular refactoring in progress |
 
-## コンポーネント設計
+## Dependencies
 
-### 全体アーキテクチャ
+| Package | Purpose | Status |
+|---------|---------|--------|
+| `whenever` | Modern datetime library (UTC-native) | Active |
+| `rich` | Console output formatting (tables, colored text) | Active |
+| `typer` | CLI framework (new modules) | Active |
+| `argparse` | CLI framework (legacy modules) | Legacy |
+| `pygit2` | Git repository operations (libgit2 bindings) | Active |
+| `requests` | HTTP client for GitHub API | Active |
+
+### Note on Dependencies
+
+- `PyGithub` is NOT used — direct `requests` calls to GitHub REST API instead
+- `click` is NOT used — `typer` (new) and `argparse` (legacy) are the CLI frameworks
+- `whenever` is adopted for datetime handling in new modules (see Date/Time Handling section)
+
+## Component Design
+
+### Overall Architecture
 
 ```
-                    ┌─────────────┐
-                    │   __main__  │
-                    ├─────────────┤
-                    │ click.group │
-                    └──────┬──────┘
-              ┌────────────┴────────────┐
-              ▼                         ▼
-     ┌──────────────┐         ┌──────────────┐
-     │ cli/verify.py│         │ cli/update.py│
-     └──────┬───────┘         └──────┬───────┘
-            │                        │
-            ▼                        ▼
-     ┌──────────────┐         ┌──────────────┐
-     │ core/*.py    │◄────────┤ core/*.py    │
-     │ lock_file.py │         │ lock_file.py │
-     │ flake_input  │         │ flake_input  │
-     │ age_check    │         │ age_check    │
-     │ errors       │         │ errors       │
-     └──────┬───────┘         └──────┬───────┘
-            │                        │
-            ▼                        ▼
-     ┌──────────────┐         ┌──────────────┐
-     │ git_ops/     │         │ git_ops/     │
-     ├──────────────┤         ├──────────────┤
-     │ github_api   │         │ github_api   │
-     │ libgit2      │         │ libgit2      │
-     │ client.py    │         │ client.py    │
-     └──────────────┘         └──────┬───────┘
-                                     │
-              ┌──────────────────────┼──────────────┐
-              ▼                      ▼              ▼
-       ┌─────────────┐    ┌──────────────┐  ┌─────────────┐
-       │output/      │    │nix subprocess│  │output/      │
-       │formatters.py│    │(update のみ) │  │formatters.py│
-       └─────────────┘    └──────────────┘  └─────────────┘
+Legacy (Stable):                         New (WIP):
+─────────────────────────────────────────────────────────────────────────
+nix_flake_age_filter.py                  nix_flake_age_verify.py (typer)
+    │                                         │
+    ▼                                         ▼
+flake_age_common.py                      flake_lock.py ──► FlakeInput
+    │                                         │
+    ▼                                         ▼
+┌─────────────────┐                     age_check.py (whenever)
+│ GitHub API      │                           │\│ (requests)      │                           ▼
+│ pygit2 fallback │                     git_operations.py
+└─────────────────┘                           │
+                                              ▼
+                                        commit_fetch.py
+                                              │
+                                              ▼
+                                        flake_age_types.py
+                                        (dataclasses)
+
+nix_flake_age_update.py (argparse)
+    │
+    └────► flake_age_common.py
 ```
 
-### core/ — ドメインロジック
+**Note:** The modular architecture (`flake_age_filter/` package) is WIP and not shown.
 
-#### `flake_input.py` — FlakeInput ドメインモデル
+### core/ — Domain Logic
 
-flake.lock 内の1つの input を表現する。flake.lock の `nodes.<name>` に含まれる `locked` と `original` の情報を保持。
+#### `flake_input.py` — FlakeInput Domain Model
+
+Represents a single input in flake.lock. Holds information from `locked` and `original` contained in `nodes.<name>` of flake.lock.
 
 ```python
 @dataclass(frozen=True)
@@ -111,41 +109,41 @@ class FlakeInput:
     original: dict
 ```
 
-責務：
-- git URL の構築 (`to_git_url()`)
-- flake URL の構築 (`to_flake_url()`)
-- ターゲットブランチの解決 (`target_ref()`)
-- nixpkgs 判定 (`is_nixpkgs()`)
+Responsibilities:
+- Construct git URL (`to_git_url()`)
+- Construct flake URL (`to_flake_url()`)
+- Resolve target branch (`target_ref()`)
+- Determine if nixpkgs (`is_nixpkgs()`)
 
-URL 構築は GitHub, GitLab, SourceHut, 汎用 git, indirect, path の各タイプに対応。
+URL construction supports GitHub, GitLab, SourceHut, generic git, indirect, and path types.
 
-#### `lock_file.py` — flake.lock パーサー
+#### `lock_file.py` — flake.lock Parser
 
-`flake.lock` の JSON を解析し、直接ルート input だけを抽出する。
+Parses `flake.lock` JSON and extracts only the direct root inputs.
 
 ```python
 def parse_flake_lock(path: Path) -> dict:
-    """flake.lock を解析して JSON 構造体を返す。ファイルが存在しない場合は例外。"""
+    """Parse flake.lock and return JSON structure. Raises exception if file does not exist."""
 
 def extract_locked_inputs(lock_data: dict) -> list[FlakeInput]:
-    """ルートノードの直接 input だけを FlakeInput のリストとして抽出。"""
+    """Extract only the direct root inputs as a list of FlakeInput."""
 ```
 
-`nodes.root.inputs` が dict か list かで判定ロジックが変わる点に注意。
+Note that the determination logic differs depending on whether `nodes.root.inputs` is a dict or a list.
 
-#### `age_check.py` — 年齢判定
+#### `age_check.py` — Age Evaluation
 
-コミットの Unix タイムスタンプと最小経過日数から、条件を満たすかを判定。
+Determines whether the condition is met based on the commit's Unix timestamp and minimum age in days.
 
 ```python
 def check_age(timestamp: int, min_age_days: int, now: datetime) -> AgeResult:
-    """経過日数を計算し、閾値以上かを判定。"""
+    """Calculate elapsed days and determine if threshold is met or exceeded."""
 
 def format_duration(days: int) -> str:
-    """日数を人間可読な文字列に変換 (例: "3w 2d", "1y 5w")。"""
+    """Convert days to a human-readable string (e.g., "3w 2d", "1y 5w")."""
 ```
 
-#### `errors.py` — カスタム例外
+#### `errors.py` — Custom Exceptions
 
 ```python
 class FlakeAgeError(Exception): ...
@@ -156,13 +154,13 @@ class AgeValidationError(FlakeAgeError): ...
 class NixExecutionError(FlakeAgeError): ...
 ```
 
-既存の `{"ok": False, "error": ...}` パターンを廃止し、例外で統一する。
+Unify error handling with exceptions, replacing the existing `{"ok": False, "error": ...}` pattern.
 
-### git_ops/ — git 操作層
+### git_ops/ — Git Operations Layer
 
-プロトコルベースのフォールバックチェーン：GitHub API → pygit2
+Protocol-based fallback chain: GitHub API → pygit2
 
-#### `client.py` — GitClient プロトコル
+#### `client.py` — GitClient Protocol
 
 ```python
 class GitClient(Protocol):
@@ -170,94 +168,99 @@ class GitClient(Protocol):
     def find_commit_at_cutoff(self, url: str, ref: str, cutoff_ts: int, timeout: int) -> CommitSearchResult: ...
 ```
 
-レートリミット時は指数バックオフ（exponential backoff）でリトライする。
+Retry with exponential backoff when rate limited.
 
-#### `github_api.py` — GitHub REST API (PyGithub)
+#### `github_api.py` — GitHub REST API
 
-GitHub ホストの input に対して `PyGithub` ライブラリを使用する。直接 HTTP リクエストを行うよりも型安全で、認証（トークン利用時）やレートリミットのハンドリングが組み込みで提供される。
+**Current Implementation:** Direct `requests` calls to GitHub REST API.
 
-| 用途 | PyGithub による実装イメージ |
-|------|--------------------------|
-| 特定 SHA のタイムスタンプ取得 | `repo.get_commit(sha).commit.committer.date` |
-| 日付以前で最新のコミット探索 | `repo.get_commits(sha=ref, until=cutoff_date)` |
-| レートリミット対応 | `RateLimitExceededException` を捕捉し `RateLimitError` に変換 |
+| Purpose | Implementation |
+|---------|----------------|
+| Get timestamp for a specific SHA | `GET /repos/{owner}/{repo}/commits/{sha}` → `.commit.committer.date` |
+| List commits on a ref | `GET /repos/{owner}/{repo}/commits?sha={ref}` |
+| Rate limit handling | Check `X-RateLimit-Remaining` header, wait and retry |
 
-環境変数 `GITHUB_TOKEN` が設定されている場合は自動的に認証され、レートリミットが緩和される（60回/時 → 5000回/時）。
+If the `GITHUB_TOKEN` environment variable is set, authentication is automatic via `Authorization: Bearer` header, and the rate limit is increased (60/hr → 5000/hr).
 
-#### `libgit2.py` — pygit2 操作
+**Fallback Chain:**
+1. Try `gh` CLI if available (`gh api` command)
+2. Use `requests` to GitHub REST API
+3. Fall back to git protocol (ls-remote + fetch) for non-GitHub hosts
 
-非 GitHub ホスト（GitLab, SourceHut, 汎用 git）に対して pygit2 で直接 git 操作。
+#### `libgit2.py` — pygit2 Operations
 
-手順：
-1. `pygit2.init_repository(path, bare=True)` で一時ベアリポジトリ作成
-2. `remote.create()` でリモート追加
-3. `remote.fetch(depth=1)` で shallow fetch
-4. `commit.commit_time` でタイムスタンプ取得
+Direct git operations with pygit2 for non-GitHub hosts (GitLab, SourceHut, generic git).
 
-ターゲットコミット探索時は depth を段階的に拡張しながら walk する。
+Procedure:
+1. Create a temporary bare repository with `pygit2.init_repository(path, bare=True)`
+2. Add remote with `remote.create()`
+3. Shallow fetch with `remote.fetch(depth=1)`
+4. Get timestamp with `commit.commit_time`
 
-### cli/ — サブコマンド
+When searching for a target commit, walk while incrementally expanding the depth.
+
+### cli/ — Subcommands
 
 #### verify `flake-age verify [OPTIONS] [FLAKE_LOCK]`
 
-既存の `flake.lock` を検証。
+Validate an existing `flake.lock`.
 
-オプション：
-- `--min-age`（必須）: 最小経過日数
-- `--timeout`: 各 input のタイムアウト秒数
-- `--skip-ref-check`: ls-remote 参照チェックのスキップ
-- `--exclude`: 除外 input 名
-- `--json`: JSON 出力
-- `--verbose`/`-v`: 詳細表示
+Options:
+- `--min-age` (required): Minimum age in days
+- `--timeout`: Timeout in seconds per input
+- `--skip-ref-check`: Skip ls-remote reference check
+- `--exclude`: Exclude input name
+- `--json`: JSON output
+- `--verbose`/`-v`: Verbose output
 
-実行フロー：
+Execution flow:
 ```
-flake.lock パース
-→ 各 input に対して:
-  1. GitClient でコミットタイムスタンプ取得
-  2. check_age() で年齢判定
-  3. 結果を蓄積
-→ formatter で出力
-→ 1件でも FAIL/ERROR で exit 1
+Parse flake.lock
+→ For each input:
+  1. Get commit timestamp via GitClient
+  2. Evaluate age with check_age()
+  3. Accumulate results
+→ Output via formatter
+→ Exit 1 if any FAIL/ERROR
 ```
 
 #### update `flake-age update [OPTIONS] [INPUTS...]`
 
-`nix flake update` のラッパーとして、最小経過日数を満たすコミットのみを採用。
+Wraps `nix flake update` to adopt only commits that meet the minimum age requirement.
 
-オプション：
-- `--min-age`（必須）: 最小経過日数
-- `--timeout`: 各 input のタイムアウト秒数
-- `--exclude`: 除外 input 名（デフォルト: `["self"]`）
-- `--dry-run`: nix の実行は行わない
-- `--json`: JSON 出力
-- `--verbose`/`-v`: 詳細表示
-- `--flake-lock`: flake.lock のパス
+Options:
+- `--min-age` (required): Minimum age in days
+- `--timeout`: Timeout in seconds per input
+- `--exclude`: Exclude input name (default: `["self"]`)
+- `--dry-run`: Do not execute nix
+- `--json`: JSON output
+- `--verbose`/`-v`: Verbose output
+- `--flake-lock`: Path to flake.lock
 
-実行フロー：
+Execution flow:
 ```
-flake.lock 存在確認
-  ├─ 存在しない → flake.nix から inputs を抽出し、直接 flake.lock を生成
-  └─ 存在する → 既存 lock をパース
+Check if flake.lock exists
+  ├─ Does not exist → Extract inputs from flake.nix and generate flake.lock directly
+  └─ Exists → Parse existing lock
 
-→ 各 input に対して:
-  1. GitClient.find_commit_at_cutoff() で条件を満たす最新コミットを探索
-  2. 現在の locked_rev で十分な場合はスキップ
-  3. 条件を満たすコミットが見つかったら flake URL を構築
-  4. nix flake update --override-input で更新
-→ 結果を出力
+→ For each input:
+  1. Search for the latest commit meeting the condition via GitClient.find_commit_at_cutoff()
+  2. Skip if the current locked_rev is sufficient
+  3. If a qualifying commit is found, construct a flake URL
+  4. Update with nix flake update --override-input
+→ Output results
 ```
 
-`flake.lock` 未存在時のフォールバック：
-1. `nix flake lock` で初期 lock 生成を試行
-2. 失敗時は flake.nix を regex でパースし、pygit2/GitHub API で直接コミットを解決
-3. flake.lock 互換の JSON を直に生成
+Fallback when `flake.lock` is missing:
+1. Attempt initial lock generation with `nix flake lock`
+2. If that fails, parse flake.nix with regex and resolve commits directly via pygit2/GitHub API
+3. Generate flake.lock-compatible JSON directly
 
-### output/ — 出力
+### output/ — Output
 
 #### `formatters.py`
 
-rich の `Table` と `Console` を使用した整形出力と、`json.dumps` による JSON 出力を提供。
+Provides formatted output using rich's `Table` and `Console`, and JSON output via `json.dumps`.
 
 ```python
 def print_verify_table(results: list[VerifyResult], min_age: int, json_output: bool) -> None: ...
@@ -265,9 +268,9 @@ def print_update_summary(results: list[UpdateResult], json_output: bool, dry_run
 def print_json(results: list[dict]) -> None: ...
 ```
 
-## CLI インターフェース仕様
+## CLI Interface Specification
 
-### エントリポイント
+### Entry Point
 
 ```
 flake-age --help
@@ -275,7 +278,7 @@ flake-age verify [OPTIONS] [FLAKE_LOCK]
 flake-age update [OPTIONS] [INPUTS...]
 ```
 
-pyproject.toml で以下のように定義：
+Defined in pyproject.toml as follows:
 
 ```toml
 [project.scripts]
@@ -292,16 +295,16 @@ from flake_age_filter.cli.update import update
 @click.group()
 @click.version_option()
 def main():
-    """Nix flake input の最小経過日数を検証・更新する CLI"""
+    """CLI for validating and updating minimum age of Nix flake inputs"""
     pass
 
 main.add_command(verify)
 main.add_command(update)
 ```
 
-## データフロー
+## Data Flow
 
-### verify コマンド
+### verify Command
 
 ```
 flake.lock ──► lock_file.parse_flake_lock() ──► dict
@@ -324,10 +327,10 @@ flake.lock ──► lock_file.parse_flake_lock() ──► dict
                                                 formatters.py
 ```
 
-### update コマンド
+### update Command
 
 ```
-flake.lock存在?
+flake.lock exists?
   ├─ Yes → parse → list[FlakeInput]
   └─ No  → nix flake lock (or regex parse) → list[FlakeInput]
                                     │
@@ -336,12 +339,12 @@ flake.lock存在?
                                     │
                             ┌───────┴───────┐
                             ▼               ▼
-                       十分なコミット   条件を満たす
-                       既存で十分       新コミット発見
+                       Existing commit   Qualifying
+                       is sufficient     new commit found
                             │               │
                             ▼               ▼
-                        結果に記録    override URL 構築 →
-                           │          nix flake update
+                        Record result    Build override URL →
+                           │             nix flake update
                            ▼               │
                                    list[UpdateResult]
                                             │
@@ -349,21 +352,21 @@ flake.lock存在?
                                        formatters.py
 ```
 
-## テスト戦略
+## Test Strategy
 
-| レイヤ | テスト対象 | 方法 |
+| Layer | Test Target | Method |
 |--------|-----------|------|
-| `core/flake_input` | URL 変換、ref 解決 | ユニットテスト（モック不要） |
-| `core/lock_file` | flake.lock パース | フィクスチャー JSON を使用 |
-| `core/age_check` | 日付計算 | 境界値テスト（ちょうど閾値、1日前後） |
-| `git_ops/github_api` | API 呼び出し | `responses` で HTTP モック |
-| `git_ops/libgit2` | pygit2 操作 | 一時リポジトリを使用した結合テスト |
-| `cli/` | サブコマンド | `click.testing.CliRunner` |
+| `core/flake_input` | URL conversion, ref resolution | Unit tests (no mocking needed) |
+| `core/lock_file` | flake.lock parsing | Use fixture JSON |
+| `core/age_check` | Date calculations | Boundary value tests (exactly at threshold, before/after) |
+| `git_ops/github_api` | API calls | HTTP mocking with `responses` |
+| `git_ops/libgit2` | pygit2 operations | Integration tests with temporary repositories |
+| `cli/` | Subcommands | `click.testing.CliRunner` |
 
-## 将来の拡張ポイント
+## Future Extension Points
 
-- 設定ファイル (`.flake-age.toml`) によるデフォルト値の定義
-- GitHub トークン認証 (`GITHUB_TOKEN` 環境変数)
-- 並列処理（`asyncio` + `aiohttp`）による検証の高速化
-- CI 統合（GitHub Actions での自動検証ステップ）
-- 出力フォーマットの追加（JUnit XML, SARIF）
+- Configuration file (`.flake-age.toml`) for default values
+- GitHub token authentication (`GITHUB_TOKEN` environment variable)
+- Faster validation with parallel processing (`asyncio` + `aiohttp`)
+- CI integration (automatic validation step in GitHub Actions)
+- Additional output formats (JUnit XML, SARIF)
