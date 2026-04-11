@@ -1,3 +1,5 @@
-"""Nix flake input minimum age verification and update tool."""
+"""Top‑level package for the nix‑flake‑age‑filter project.
 
-__version__ = "0.1.0"
+The actual implementation lives in the :pymod:`flake_age_filter.core` submodule
+and the ``cli`` package provides the Typer commands ``verify`` and ``update``.
+"""

@@ -1,31 +1,33 @@
-"""Custom exception classes."""
-
-from __future__ import annotations
-
+"""Custom exception hierarchy for the flake‑age filter.
+All domain‑specific errors inherit from :class:`FlakeAgeError` so callers can
+catch a single base class.
+"""
 
 class FlakeAgeError(Exception):
-    """Base exception for flake-age-filter."""
+    """Base class for all flake‑age related errors."""
+    pass
 
 
 class FlakeLockNotFoundError(FlakeAgeError):
-    """Raised when flake.lock is not found."""
+    """Raised when ``flake.lock`` cannot be located or read."""
+    pass
 
 
-class FlakeLockParseError(FlakeAgeError):
-    """Raised when JSON parsing of flake.lock fails."""
-
-
-class CommitNotFoundError(FlakeAgeError):
-    """Raised when the specified revision is not found on the remote."""
+class CommitFetchError(FlakeAgeError):
+    """Raised when a commit timestamp cannot be obtained from a remote."""
+    pass
 
 
 class RateLimitError(FlakeAgeError):
-    """Raised when a rate limit (e.g., GitHub API) is reached."""
+    """Raised when a remote API (e.g. GitHub) returns a rate‑limit response."""
+    pass
 
 
-class RepositoryNotAccessible(FlakeAgeError):
-    """Raised when the remote repository is not accessible."""
+class AgeValidationError(FlakeAgeError):
+    """Raised when a commit does not satisfy the minimum‑age requirement."""
+    pass
 
 
-class TimeoutError(FlakeAgeError):
-    """Raised when an operation times out."""
+class NixExecutionError(FlakeAgeError):
+    """Raised when a ``nix`` command exits non‑zero."""
+    pass

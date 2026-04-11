@@ -1,178 +1,115 @@
-"""Output formatters for verify and update.
+"""Result formatting utilities for the flake‑age CLI.
 
-Provides table display using rich and JSON output.
+The CLI commands (`verify` and `update`) produce a list of dictionaries with the
+following keys (a superset of the original script's output):
+
+* ``input`` – name of the flake input
+* ``ok`` – boolean indicating whether the age requirement was satisfied
+* ``rev`` – the commit SHA (or the chosen rev for ``update``)
+* ``timestamp`` – Unix epoch of the commit
+* ``age_days`` – integer age in days (when ``ok`` is ``True``)
+* ``error`` – optional error message when ``ok`` is ``False``
+* ``duration`` – human‑readable string produced by ``core.age_check.format_duration``
+
+These helpers provide two output modes:
+
+* **Rich table** – when the ``rich`` library is available.  The table includes
+  colour‑coded status, age, and error columns.
+* **Plain text** – fallback when ``rich`` cannot be imported; a simple aligned
+  column layout is used.
 """
 
 from __future__ import annotations
 
-import json
-import sys
-from dataclasses import dataclass, asdict
-from typing import Literal
+from typing import Iterable, List, Mapping
 
-from rich.console import Console
-from rich.table import Table
-from rich.progress import Progress, SpinnerColumn, TextColumn
+# The core ``format_duration`` function is re‑exported for convenience.
+from ..core.age_check import format_duration
 
 
-# ── Data Models ──────────────────────────────────────────────
-
-@dataclass
-class VerifyResult:
-    name: str
-    status: Literal["PASS", "FAIL", "ERROR", "SKIP"]
-    age_days: int | None
-    commit_date: str | None
-    rev: str | None
-    error: str | None
+def _try_import_rich():
+    try:
+        from rich.table import Table
+        from rich.console import Console
+        return Table, Console
+    except Exception:  # pragma: no cover – import failure path
+        return None, None
 
 
-@dataclass
-class UpdateResult:
-    name: str
-    status: Literal["UPDATED", "SKIPPED", "ERROR"]
-    from_rev: str | None
-    to_rev: str | None
-    age_days: int | None
-    error: str | None
+def _plain_row(columns: List[str], widths: List[int]) -> str:
+    """Return a single formatted row for plain‑text output.
+
+    ``columns`` and ``widths`` must have the same length.  Columns are left‑
+    justified to their respective width.
+    """
+    padded = [c.ljust(w) for c, w in zip(columns, widths)]
+    return "  ".join(padded)
 
 
-# ── Helpers ──────────────────────────────────────────────────
+def format_results(
+    results: Iterable[Mapping[str, object]], *, verbose: bool = False
+) -> str:
+    """Format *results* into a human‑readable string.
 
-_STATUS_COLOR: dict[str, str] = {
-    "PASS": "green",
-    "FAIL": "red",
-    "ERROR": "bold red",
-    "SKIP": "yellow",
-    "UPDATED": "green",
-    "SKIPPED": "yellow",
-}
+    If the ``rich`` library is available a colorful table is returned, otherwise
+    a plain‑text table is produced.  The function never prints directly – the
+    caller decides where to send the output (stdout, file, etc.).
+    """
+    Table, Console = _try_import_rich()
+    results = list(results)  # materialise for width calculations / iteration
 
-console = Console(stderr=True)
+    # Determine column set – always include ``Input`` and ``Status``.
+    base_cols = ["Input", "Status"]
+    extra_cols = []
+    if any(r.get("rev") for r in results):
+        extra_cols.append("Rev")
+    if any(r.get("age_days") is not None for r in results):
+        extra_cols.append("Age (d)")
+    if any(r.get("duration") for r in results):
+        extra_cols.append("Duration")
+    if verbose:
+        extra_cols.append("Error")
 
+    headers = base_cols + extra_cols
 
-def format_duration(days: int) -> str:
-    if days < 0:
-        return f"{days}d (future)"
-    if days < 7:
-        return f"{days}d"
-    w = days // 7
-    r = days % 7
-    if w < 52:
-        return f"{w}w {r}d" if r else f"{w}w"
-    y = w // 52
-    wr = w % 52
-    return f"{y}y {wr}w"
+    if Table:  # Rich available
+        table = Table(show_header=True, header_style="bold cyan")
+        for h in headers:
+            table.add_column(h)
+        for r in results:
+            status = "✅" if r.get("ok") else "❌"
+            row = [r.get("input", ""), status]
+            if "Rev" in extra_cols:
+                row.append(str(r.get("rev", "-")))
+            if "Age (d)" in extra_cols:
+                row.append(str(r.get("age_days", "-")))
+            if "Duration" in extra_cols:
+                row.append(str(r.get("duration", "-")))
+            if verbose:
+                row.append(str(r.get("error", "")))
+            table.add_row(*row)
+        console = Console()
+        from io import StringIO
+        sio = StringIO()
+        console.print(table, file=sio)
+        return sio.getvalue()
 
-
-# ── Verify Output ───────────────────────────────────────────
-
-def print_verify_table(results: list[VerifyResult], min_age: int) -> None:
-    table = Table(title=f"Age Verification (min: {min_age}d)")
-    table.add_column("Input", style="cyan")
-    table.add_column("Status")
-    table.add_column("Age", justify="right")
-    table.add_column("Commit Date")
-    table.add_column("Rev", style="dim")
-    table.add_column("Error", style="red")
-
+    # Plain‑text fallback – compute column widths
+    col_widths = [max(len(h), max(len(str(r.get(k.lower(), "-"))) for r in results)) for h, k in zip(headers, headers)]
+    # Ensure a minimum width for readability
+    col_widths = [max(w, 8) for w in col_widths]
+    lines = [_plain_row(headers, col_widths)]
+    lines.append("-" * (sum(col_widths) + 2 * (len(col_widths) - 1)))
     for r in results:
-        color = _STATUS_COLOR.get(r.status, "")
-        table.add_row(
-            r.name,
-            f"[{color}]{r.status}[/{color}]",
-            format_duration(r.age_days) if r.age_days is not None else "-",
-            r.commit_date or "-",
-            (r.rev or "")[:8] if r.rev else "-",
-            r.error or "",
-        )
-
-    console.print(table)
-
-    summary = _verify_summary(results)
-    console.print(
-        f"[bold]Summary:[/bold] {summary['pass']} pass, "
-        f"[bold red]{summary['fail']}[/bold red] fail, "
-        f"[red]{summary['error']}[/red] error"
-    )
-
-
-def _verify_summary(results: list[VerifyResult]) -> dict[str, int]:
-    summary: dict[str, int] = {"pass": 0, "fail": 0, "error": 0, "skip": 0}
-    for r in results:
-        key = r.status.lower()
-        if key in summary:
-            summary[key] += 1
-    return summary
-
-
-# ── Update Output ────────────────────────────────────────────
-
-def print_update_summary(results: list[UpdateResult], dry_run: bool) -> None:
-    label = "Update Preview (dry-run)" if dry_run else "Update Results"
-    table = Table(title=label)
-    table.add_column("Input", style="cyan")
-    table.add_column("Status")
-    table.add_column("From Rev", style="dim")
-    table.add_column("To Rev", style="dim")
-    table.add_column("Age")
-    table.add_column("Error", style="red")
-
-    for r in results:
-        color = _STATUS_COLOR.get(r.status, "")
-        table.add_row(
-            r.name,
-            f"[{color}]{r.status}[/{color}]",
-            (r.from_rev or "")[:8] if r.from_rev else "-",
-            (r.to_rev or "")[:8] if r.to_rev else "-",
-            format_duration(r.age_days) if r.age_days is not None else "-",
-            r.error or "",
-        )
-
-    console.print(table)
-
-
-# ── JSON Output ─────────────────────────────────────────────
-
-def print_json_verify(
-    results: list[VerifyResult], min_age: int, flake_path: str
-) -> None:
-    summary = _verify_summary(results)
-    output = {
-        "flake": flake_path,
-        "min_age": min_age,
-        "inputs": [asdict(r) for r in results],
-        "summary": {
-            "total": len(results),
-            **summary,
-        },
-        "exit_code": 0 if summary["fail"] == 0 and summary["error"] == 0 else 1,
-    }
-    _print_json(output)
-
-
-def print_json_update(
-    results: list[UpdateResult], flake_path: str, dry_run: bool
-) -> None:
-    updates = [asdict(r) for r in results]
-    output = {
-        "flake": flake_path,
-        "dry_run": dry_run,
-        "updates": updates,
-    }
-    _print_json(output)
-
-
-def _print_json(data: dict) -> None:
-    out = Console(file=sys.stdout)
-    out.print(json.dumps(data, indent=2, ensure_ascii=False))
-
-
-# ── Progress Display ─────────────────────────────────────────
-
-def make_progress(description: str, total: int) -> Progress:
-    return Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    )
+        status = "OK" if r.get("ok") else "FAIL"
+        row_vals = [str(r.get("input", "")), status]
+        if "Rev" in extra_cols:
+            row_vals.append(str(r.get("rev", "-")))
+        if "Age (d)" in extra_cols:
+            row_vals.append(str(r.get("age_days", "-")))
+        if "Duration" in extra_cols:
+            row_vals.append(str(r.get("duration", "-")))
+        if verbose:
+            row_vals.append(str(r.get("error", "")))
+        lines.append(_plain_row(row_vals, col_widths))
+    return "\n".join(lines)

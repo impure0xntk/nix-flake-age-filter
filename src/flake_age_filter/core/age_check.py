@@ -1,40 +1,49 @@
-"""Age validation logic."""
+"""Age checking utilities using the ``whenever`` library.
+
+The original implementation used ``datetime`` from the standard library.
+Here we rely on ``whenever.Instant`` which provides UTC‑native timestamps
+and convenient arithmetic.
+"""
 
 from __future__ import annotations
 
-import time
-from dataclasses import dataclass
+from whenever import Instant
 
 
-@dataclass(frozen=True)
-class AgeResult:
-    """Result of age validation."""
+def check_age(timestamp: int, min_age_days: int, now: Instant) -> dict:
+    """Return a dict describing whether ``timestamp`` satisfies ``min_age_days``.
 
-    age_days: int
-    commit_timestamp: int
-    is_old_enough: bool
-    threshold_days: int
+    ``timestamp`` – Unix epoch seconds (UTC).
+    ``now`` – an ``Instant`` representing the current moment.
+    The result mimics the legacy output format:
 
-
-def check_age(
-    commit_ts: int,
-    threshold_days: int,
-    *,
-    reference_ts: int | None = None,
-) -> AgeResult:
-    """Calculate commit age and compare against threshold.
-
-    Args:
-        commit_ts: Commit UNIX timestamp
-        threshold_days: Minimum required age in days
-        reference_ts: Reference time (default: current time)
+    ``{"ok": bool, "age_days": int, "commit_date": str, "error": Optional[str]}``
     """
-    now = reference_ts or int(time.time())
-    age_seconds = now - commit_ts
-    age_days = age_seconds // 86400  # 86400 = 60 * 60 * 24
-    return AgeResult(
-        age_days=age_days,
-        commit_timestamp=commit_ts,
-        is_old_enough=age_days >= threshold_days,
-        threshold_days=threshold_days,
-    )
+    commit_time = Instant.from_timestamp(timestamp)
+    age_seconds = (now - commit_time).total_seconds()
+    age_days = int(age_seconds // 86_400)
+    ok = age_days >= min_age_days
+    return {
+        "ok": ok,
+        "age_days": age_days,
+        "commit_date": str(commit_time).replace("T", " ").rsplit(".", 1)[0] + " UTC",
+        "error": None if ok else f"only {age_days}d old (minimum: {min_age_days}d)",
+    }
+
+
+def format_duration(days: int) -> str:
+    """Human‑readable formatting of a day count.
+
+    Mirrors the behaviour of the legacy ``format_duration`` function.
+    """
+    if days < 0:
+        return f"{days}d (future)"
+    if days < 7:
+        return f"{days}d"
+    weeks = days // 7
+    remainder = days % 7
+    if weeks < 52:
+        return f"{weeks}w {remainder}d" if remainder else f"{weeks}w"
+    years = weeks // 52
+    w_rem = weeks % 52
+    return f"{years}y {w_rem}w"
