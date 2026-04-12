@@ -1,6 +1,7 @@
-{ lib, pkgs, python3Packages }:
+{ lib, pkgs }:
 
 pkgs.python3Packages.buildPythonPackage rec {
+  nativeBuildInputs = [ pkgs.python3Packages.hatchling ];
   pname = "nix-flake-age-filter";
   version = "0.1.0";
 
