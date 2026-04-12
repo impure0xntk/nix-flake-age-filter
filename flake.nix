@@ -99,13 +99,7 @@
       mkCliPackage = system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-          python = pkgs.python3.withPackages (ps: with ps; [
-            pygit2
-            requests
-            rich
-            typer
-            whenever
-          ]);
+          python = pkgs.python3;
 
           # Copy Python scripts into a derivation
           src = pkgs.stdenv.mkDerivation {
