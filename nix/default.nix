@@ -1,4 +1,4 @@
-{ lib, pkgs }:
+{ lib, pkgs, python3Packages }:
 
 pkgs.python3Packages.buildPythonPackage rec {
   nativeBuildInputs = [ pkgs.python3Packages.hatchling ];
@@ -6,17 +6,19 @@ pkgs.python3Packages.buildPythonPackage rec {
   version = "0.1.0";
 
   # Use the current repository checkout as source.
-  src = ./..;
+  src = ../src;
 
   # Enable PEP‑517 building using the pyproject.toml defined at the repo root.
   pyproject = true;
+  
+
 
   # Runtime dependencies.
   propagatedBuildInputs = [ pkgs.python3Packages.rich ];
 
   # Minimal sanity check – import the CLI to ensure the package installs correctly.
   checkPhase = ''
-    ${pkgs.python3.interpreter} -c "import nix_flake_age_update; print('import ok')"
+    ${pkgs.python3}/bin/python -c "import nix_flake_age_filter.nix_flake_age_update; print('import ok')"
   '';
 
   meta = with lib; {
