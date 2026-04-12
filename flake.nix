@@ -113,7 +113,7 @@
             phases = [ "installPhase" ];
             installPhase = ''
               mkdir -p $out/libexec
-              cp ${./src/age_check.py} $out/libexec/age_check.py
+              cp ${./src/flake_age_filter/core/age_check.py} $out/libexec/age_check.py
               cp ${./src/flake_age_common.py} $out/libexec/flake_age_common.py
               cp ${./src/flake_age_types.py} $out/libexec/flake_age_types.py
               cp ${./src/flake_lock.py} $out/libexec/flake_lock.py

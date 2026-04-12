@@ -105,7 +105,7 @@ def update(
         res = _choose_rev(inp, min_age, now_ts, timeout)
         results.append({"input": inp.name, **res})
         if res.get("ok"):
-            overrides.append(f"{inp.name}={inp.to_flake_url(res["rev"]) }")
+            overrides.append(f"{inp.name}={inp.to_flake_url(res['rev'])}")
         else:
             failures.append(inp.name)
 

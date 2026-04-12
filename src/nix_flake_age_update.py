@@ -23,16 +23,12 @@ from rich.console import Console
 from rich.table import Table
 from rich import box
 
-from flake_age_common import (
-    FlakeInput,
-    check_age,
-    extract_locked_inputs,
-    find_oldest_commit_meeting_age,
-    format_duration,
-    get_commit_timestamp,
-    parse_flake_lock,
-    run_cmd,
-)
+
+from flake_age_filter.core.models import FlakeInput  # noqa: E402
+from flake_age_filter.core.age_check import check_age, format_duration  # noqa: E402
+from flake_age_filter.core.lock_file import read_flake_inputs as extract_locked_inputs  # noqa: E402
+from flake_age_filter.core.git_ops import find_oldest_commit_meeting_age, get_commit_timestamp, run_cmd  # noqa: E402
+from flake_age_filter.core.lock_file import parse_flake_lock  # noqa: E402
 
 
 def build_override_url(inp: FlakeInput, rev: str) -> str | None:

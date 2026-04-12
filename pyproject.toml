@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nix-flake-age-filter"
+version = "0.1.0"
+description = "Nix flake input age filter CLI"
+authors = [{name = "impure0xntk", email = "you@example.com"}]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["rich>=13.0.0"]
+
+[project.scripts]
+nix-flake-age = "nix_flake_age_update:main"
