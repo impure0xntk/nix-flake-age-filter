@@ -1,6 +1,6 @@
-{ lib, python3Packages, python }:
+{ lib, pkgs, python3Packages }:
 
-python3Packages.buildPythonPackage rec {
+pkgs.python3Packages.buildPythonPackage rec {
   pname = "nix-flake-age-filter";
   version = "0.1.0";
 
@@ -11,13 +11,11 @@ python3Packages.buildPythonPackage rec {
   pyproject = true;
 
   # Runtime dependencies.
-  propagatedBuildInputs = with python3Packages; [
-    rich
-  ];
+  propagatedBuildInputs = [ pkgs.python3Packages.rich ];
 
   # Minimal sanity check – import the CLI to ensure the package installs correctly.
   checkPhase = ''
-    ${python3Packages.python.interpreter} -c "import nix_flake_age_update; print('import ok')"
+    ${pkgs.python3.interpreter} -c "import nix_flake_age_update; print('import ok')"
   '';
 
   meta = with lib; {
