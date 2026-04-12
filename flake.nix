@@ -110,10 +110,22 @@
       };
 
       # CLI packages for nix run - delegate to shell.nix which builds the Python package
-      packages = lib.genAttrs nixpkgs.lib.systems.flakeExposed (system: {
-        default = nixpkgs.legacyPackages.${system}.callPackage ./nix/default.nix { }.nix-flake-age-filter;
-        nix-flake-age = nixpkgs.legacyPackages.${system}.callPackage ./nix/default.nix { }.nix-flake-age-filter;
-      });
+      packages = lib.genAttrs nixpkgs.lib.systems.flakeExposed (system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          inherit (pkgs) lib;
+          python = pkgs.python312;
+        in
+        {
+          default = pkgs.callPackage ./nix/default.nix {
+            inherit lib python;
+            inherit (python.pkgs) rich typer pygit2 requests click shellingham typing-extensions whenever;
+          };
+          nix-flake-age = pkgs.callPackage ./nix/default.nix {
+            inherit lib python;
+            inherit (python.pkgs) rich typer pygit2 requests click shellingham typing-extensions whenever;
+          };
+        });
 
       # Self-check: verify this flake's own inputs
       checks = let

@@ -14,10 +14,7 @@ A Python CLI toolkit that enforces minimum-release-age checks on Nix flake input
 
 ```
 src/
-├── flake_age_common.py       ── Shared data classes, git ops, age math
-├── nix_flake_age_filter.py   ── `verify` subcommand (validate-only)
-├── nix_flake_age_update.py   ── `update` subcommand (walk history + override-input)
-└── flake_age_filter/         ── Plugin architecture (WIP)
+└── flake_age_filter/         ── Core implementation (Typer CLI, core utils)
 ```
 
 ## Date/Time Handling (CRITICAL)

@@ -1,5 +1,12 @@
 # nix-flake-age-filter
 
+**Repository Overview**
+
+This repository provides a pure‑Python implementation of a *minimum release‑age* filter for Nix flake inputs. The tool validates that each input in `flake.lock` is older than a configurable number of days and can automatically downgrade inputs that are too recent. It is packaged as a standard Python library with a Typer‑based CLI (`flake-age`).
+
+The legacy entry points `nix_flake_age_filter.py`, `nix_flake_age_update.py` and the compatibility shim `flake_age_common.py` have been removed.
+
+
 A lightweight CLI tool that enforces a **minimum commit age** on Nix flake inputs, similar to npm's `min-release-age`. It works with plain Git (no auth tokens) and can be used both as a library and as a command‑line utility.
 
 ## Features
@@ -50,6 +57,16 @@ flake-age verify --min-age 30 --json flake.lock
 ## Development
 
 ### Running the test suite
+
+```bash
+# Enter the development environment (Nix shell)
+# This provides all dependencies, including pytest
+nix develop
+
+# Run the full test suite using pytest (recommended)
+python -m pytest -q
+```
+
 
 ```bash
 # Enter the development environment
