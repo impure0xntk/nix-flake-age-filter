@@ -9,7 +9,7 @@ Usage:
 
 import json
 import sys
-from whenever import Instant
+from datetime import datetime, timezone
 import typer
 
 from age_check import check_age, format_duration
@@ -70,7 +70,7 @@ def main(
         typer.echo("No locked inputs found in flake.lock.", err=True)
         raise typer.Exit(0)
 
-    now = Instant.now()
+    now = datetime.now(timezone.utc)
     results: list[dict] = []
 
     if not json_output:

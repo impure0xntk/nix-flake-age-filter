@@ -1,18 +1,17 @@
 """Age validation utilities."""
-
-from whenever import Instant
+from datetime import datetime, timezone
 
 from flake_age_types import AgeCheckResult
 
 
-def check_age(timestamp: int, min_age_days: int, now: Instant) -> AgeCheckResult:
+def check_age(timestamp: int, min_age_days: int, now: datetime) -> AgeCheckResult:
     """Check if commit age meets minimum requirement."""
-    commit_time = Instant.from_timestamp(timestamp)
+    commit_time = datetime.fromtimestamp(timestamp, tz=timezone.utc)
     age_days = int((now.timestamp() - commit_time.timestamp()) / 86400)
     return AgeCheckResult(
         ok=age_days >= min_age_days,
         age_days=age_days,
-        commit_date=commit_time.to_stdlib().strftime("%Y-%m-%d %H:%M UTC"),
+        commit_date=commit_time.strftime("%Y-%m-%d %H:%M UTC"),
         error=None if age_days >= min_age_days else f"only {age_days}d old (minimum: {min_age_days}d)",
     )
 

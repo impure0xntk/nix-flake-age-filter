@@ -94,27 +94,23 @@
             inherit inputs minAgeDays referenceTime system excludeInputs;
           };
         });
-
       # Build a CLI package that wraps verify and update scripts
-      mkCliPackage = system:
-        let
-          pkgs = nixpkgs.legacyPackages.${system};
-          python = pkgs.python3;
+mkCliPackage = system:
+let
+pkgs = nixpkgs.legacyPackages.${system};
+ python = pkgs.python3;
 
-          # Copy Python scripts into a derivation
-          src = pkgs.stdenv.mkDerivation {
-            name = "nix-flake-age-cli-src";
+# Copy Python scripts into a derivation
+src = pkgs.stdenv.mkDerivation {
+name = "nix-flake-age-cli-src";
+            src = ./.;
             phases = [ "installPhase" ];
             installPhase = ''
               mkdir -p $out/libexec
-              cp ${./src/flake_age_filter/core/age_check.py} $out/libexec/age_check.py
-              cp ${./src/flake_age_common.py} $out/libexec/flake_age_common.py
-              cp ${./src/flake_age_types.py} $out/libexec/flake_age_types.py
-              cp ${./src/flake_lock.py} $out/libexec/flake_lock.py
-              cp ${./src/git_operations.py} $out/libexec/git_operations.py
-              cp ${./src/nix_flake_age_verify.py} $out/libexec/nix_flake_age_verify.py
-              cp ${./src/nix_flake_age_update.py} $out/libexec/nix_flake_age_update.py
+              cp -r ./src $out/libexec
             '';
+ '';
+ };
           };
 
           # Main entry point: dispatch to subcommands
@@ -156,13 +152,13 @@
                 ;;
             esac
           '';
-        in
-        pkgs.writeShellApplication {
-          name = "nix-flake-age";
-          runtimeInputs = [ pkgs.git pkgs.nix ];
-          text = builtins.readFile cliScript;
-          meta.mainProgram = "nix-flake-age";
-        };
+          in
+          pkgs.writeShellApplication {
+            name = "nix-flake-age";
+            runtimeInputs = [ pkgs.git ];
+            text = builtins.readFile cliScript;
+            meta.mainProgram = "nix-flake-age";
+          };
 
     in
     {
@@ -189,24 +185,24 @@
         nix-flake-age = mkCliPackage system;
       }) nixpkgs.legacyPackages;
 
-      # Self-check: verify this flake's own inputs
-      checks = let
-        minAgeDays = 3;
-        referenceTime = self.lastModified or 0;
-      in
-        mkChecks {
-          inputs = self.inputs;
+# Self-check: verify this flake's own inputs
+checks = let
+minAgeDays = 3;
+ referenceTime = self.lastModified or 0;
+in
+mkChecks {
+inputs = self.inputs;
           inherit minAgeDays referenceTime;
           excludeInputs = [ "self" "nixpkgs" ];
         };
 
       # Also expose verify via nix checks for CLI package
-      apps = lib.genAttrs nixpkgs.lib.systems.flakeExposed (system: {
-        default = {
-          type = "app";
-          program = "${self.packages.${system}.default}/bin/nix-flake-age";
-        };
-      });
+apps = lib.genAttrs nixpkgs.lib.systems.flakeExposed (system: {
+default = {
+type = "app";
+ program = "${self.packages.${system}.default}/bin/nix-flake-age";
+};
+});
 
       # Development shell — delegates to shell.nix
       devShells = lib.genAttrs nixpkgs.lib.systems.flakeExposed (system: {

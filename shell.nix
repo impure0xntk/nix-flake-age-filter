@@ -16,6 +16,8 @@ pkgs.mkShell {
 
   # Add the built package's bin directory to PATH so `nix-flake-age` is available.
   shellHook = ''
+  export PYTHONPATH=$PWD/src
+
     export PATH=$PATH:${myPackage}/bin
     echo "Development shell for nix-flake-age-filter"
     echo "  python : $(python3 --version)"
