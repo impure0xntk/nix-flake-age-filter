@@ -7,37 +7,75 @@ and convenient arithmetic.
 
 from __future__ import annotations
 
-from whenever import Instant
+from typing import Union
+from whenever import Instant, TimeDelta
 
 
-def check_age(timestamp: int, min_age_days: int, now: Instant) -> dict:
-    """Return a dict describing whether ``timestamp`` satisfies ``min_age_days``.
+def _to_instant(val: Union[int, Instant]) -> Instant:
+    """Convert int (Unix epoch seconds) or Instant to Instant."""
+    return val if isinstance(val, Instant) else Instant.from_timestamp(val)
 
-    ``timestamp`` – Unix epoch seconds (UTC).
-    ``now`` – an ``Instant`` representing the current moment.
-    The result mimics the legacy output format:
 
-    ``{"ok": bool, "age_days": int, "commit_date": str, "error": Optional[str]}``
+def check_age(commit: Union[int, Instant], now: Union[int, Instant], min_days: int) -> dict:
+    """Return a dict describing whether ``commit`` satisfies ``min_days``.
+
+    Args:
+        commit: Unix epoch seconds (UTC) or Instant.
+        now: Unix epoch seconds (UTC) or Instant.
+        min_days: Minimum age in days required.
+
+    Returns:
+        Dict with keys: ok (bool), age_days (int), commit_date (str), error (str|None)
     """
-    commit_time = Instant.from_timestamp(timestamp)
-    age_seconds = (now - commit_time).total_seconds()
+    commit_time = _to_instant(commit)
+    now_instant = _to_instant(now)
+
+    delta = now_instant - commit_time
+    age_seconds = delta.total('seconds')
     age_days = int(age_seconds // 86_400)
-    ok = age_days >= min_age_days
+    ok = age_days >= min_days
+
     return {
         "ok": ok,
         "age_days": age_days,
         "commit_date": str(commit_time).replace("T", " ").rsplit(".", 1)[0] + " UTC",
-        "error": None if ok else f"only {age_days}d old (minimum: {min_age_days}d)",
+        "error": None if ok else f"only {age_days}d old (minimum: {min_days}d)",
     }
 
 
-def format_duration(days: int) -> str:
-    """Human‑readable formatting of a day count.
+def format_duration(seconds: int) -> str:
+    """Human‑readable formatting of a duration in seconds.
 
-    Mirrors the behaviour of the legacy ``format_duration`` function.
+    Converts seconds to a human-readable format:
+    - Less than 1 minute: "Xs"
+    - Less than 1 hour: "Xm Ys"
+    - Less than 1 day: "Xh Ym Zs"
+    - Less than 1 week: "Xd"
+    - Otherwise: "Xw Yd"
+
+    Args:
+        seconds: Duration in seconds.
+
+    Returns:
+        Human-readable string.
     """
-    if days < 0:
-        return f"{days}d (future)"
+    if seconds < 0:
+        return f"{seconds}s (future)"
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        minutes, secs = divmod(seconds, 60)
+        return f"{minutes}m {secs}s" if secs else f"{minutes}m"
+    if seconds < 86_400:
+        hours, rem = divmod(seconds, 3600)
+        minutes, secs = divmod(rem, 60)
+        parts = [f"{hours}h"]
+        if minutes:
+            parts.append(f"{minutes}m")
+        if secs:
+            parts.append(f"{secs}s")
+        return " ".join(parts)
+    days = seconds // 86_400
     if days < 7:
         return f"{days}d"
     weeks = days // 7

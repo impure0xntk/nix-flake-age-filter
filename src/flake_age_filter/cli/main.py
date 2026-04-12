@@ -9,14 +9,15 @@ from __future__ import annotations
 
 import typer
 
-# Import sub‑commands to register them on the Typer app.
-from .verify import app as verify_app
-from .update import app as update_app
+# Import command functions directly.
+from .verify import verify
+from .update import update
 
 app = typer.Typer(help="nix‑flake‑age‑filter CLI – verify and update flake inputs.")
 
-app.add_typer(verify_app, name="verify")
-app.add_typer(update_app, name="update")
+# Register commands directly on the main app.
+app.command(name="verify")(verify)
+app.command(name="update")(update)
 
 if __name__ == "__main__":
     app()

@@ -8,6 +8,8 @@ The goal is to ensure the end‑to‑end flow works without raising unexpected e
 import sys
 import json
 import unittest
+import shutil
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
 from typer.testing import CliRunner
@@ -19,11 +21,13 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from flake_age_filter.cli.verify import app as verify_app
 from flake_age_filter.cli.update import app as update_app
 
+
 class TestEndToEndWorkflow(unittest.TestCase):
     def setUp(self):
         self.runner = CliRunner()
-        # Create a temporary isolated directory for each test
-        self.tmp_dir = Path(self.runner.isolated_filesystem())
+        # Create a temporary directory for the isolated filesystem
+        self.tmp_dir = Path(tempfile.mkdtemp())
+
         # Minimal flake.lock containing two inputs
         self.lock_path = self.tmp_dir / "flake.lock"
         lock_content = {
@@ -50,11 +54,20 @@ class TestEndToEndWorkflow(unittest.TestCase):
         }
         self.lock_path.write_text(json.dumps(lock_content))
 
+    def tearDown(self):
+        # Clean up temporary directory
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
     @patch("flake_age_filter.core.git_ops.get_commit_timestamp")
     @patch("flake_age_filter.core.age_check.check_age")
     def test_verify_and_update_flow(self, mock_check_age, mock_get_ts):
-        # Simulate both inputs being old enough (check_age returns True)
-        mock_check_age.return_value = True
+        # Simulate both inputs being old enough (check_age returns dict with ok=True)
+        mock_check_age.side_effect = lambda *args, **kwargs: {
+            "ok": True,
+            "age_days": 30,
+            "commit_date": "2024-01-01 00:00 UTC",
+            "error": None,
+        }
         mock_get_ts.return_value = 1_599_000_000  # arbitrary old timestamp
 
         # ---- Verify ----
@@ -63,7 +76,6 @@ class TestEndToEndWorkflow(unittest.TestCase):
             ["--min-age", "10", "--json", str(self.lock_path)]
         )
         self.assertEqual(result_verify.exit_code, 0)
-        # JSON output should contain a list with two entries marked "ok": true
         output = json.loads(result_verify.output)
         self.assertIsInstance(output, list)
         self.assertEqual(len(output), 2)
@@ -76,11 +88,10 @@ class TestEndToEndWorkflow(unittest.TestCase):
             ["--min-age", "10", "--dry-run", str(self.lock_path)]
         )
         self.assertEqual(result_update.exit_code, 0)
-        # The dry‑run output includes the word "dry‑run" and shows overrides
         self.assertIn("dry‑run", result_update.output.lower())
-        # Ensure that an override string is listed for each input
         self.assertIn("example=", result_update.output)
         self.assertIn("another=", result_update.output)
+
 
 if __name__ == "__main__":
     unittest.main()

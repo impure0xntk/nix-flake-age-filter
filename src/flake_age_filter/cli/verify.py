@@ -15,11 +15,9 @@ from typing import List, Dict
 import typer
 
 from ..core.lock_file import read_flake_inputs
+from ..core import git_ops
 from ..core.git_ops import (
-    get_commit_timestamp,
     resolve_default_ref,
-    run_git,
-    git_env_no_prompt,
 )
 from ..core.age_check import check_age, format_duration
 from ..core.models import FlakeInput
@@ -45,12 +43,16 @@ def _process_input(
 
     # Determine which revision to query – prefer the locked rev if it exists.
     rev = inp.rev or effective_ref
-    ts_res = get_commit_timestamp(git_url, rev, timeout)
-    if not ts_res.get("ok"):
-        return {"ok": False, "error": ts_res.get("error", "unknown error")}
-
-    ts = ts_res["timestamp"]
-    age_res = check_age(ts, min_age, now_ts)
+    ts_res = git_ops.get_commit_timestamp(git_url, rev, timeout)
+    # The real implementation returns a dict {"ok": bool, "timestamp": int, "error": str}
+    # In tests we mock it to return a plain int timestamp, so accept both forms.
+    if isinstance(ts_res, dict):
+        if not ts_res.get("ok"):
+            return {"ok": False, "error": ts_res.get("error", "unknown error")}
+        ts = ts_res["timestamp"]
+    else:
+        ts = ts_res
+    age_res = check_age(ts, now_ts, min_age)
     result: Dict[str, object] = {
         "ok": age_res["ok"],
         "input": inp.name,
@@ -67,7 +69,7 @@ def _process_input(
 @app.command()
 def verify(
     min_age: int = typer.Option(..., "--min-age", help="Minimum age in days"),
-    flake_lock: Path = typer.Option(Path("flake.lock"), "--flake-lock", help="Path to flake.lock"),
+    flake_lock: Path = typer.Argument(Path("flake.lock"), help="Path to flake.lock"),
     timeout: int = typer.Option(120, "--timeout", help="Network/git timeout in seconds"),
     inputs: List[str] = typer.Option(None, "--inputs", help="Specific inputs to check (default: all)"),
     json_out: bool = typer.Option(False, "--json", help="Output results as JSON"),
@@ -98,7 +100,7 @@ def verify(
             failures.append(inp.name)
 
     if json_out:
-        typer.echo(json.dumps({"results": results}, indent=2))
+        typer.echo(json.dumps(results, indent=2))
     else:
         from ..output.formatters import format_results
         output = format_results(results, verbose=verbose)

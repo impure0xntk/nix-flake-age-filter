@@ -1,31 +1,36 @@
-{ lib, pkgs, python3Packages }:
+{ lib
+, python
+, rich
+, typer
+, pygit2
+, requests
+, click
+, shellingham
+, typing-extensions
+, whenever
+}:
 
-let
-  pkg = pkgs.python3Packages.buildPythonPackage rec {
-    allowDirty = true;
-    format = "setuptools";
-    nativeBuildInputs = [ python3Packages.setuptools python3Packages.wheel ];
-    pname = "nix-flake-age-filter";
-    version = "0.1.0";
+python.pkgs.buildPythonPackage rec {
+  pname = "nix-flake-age-filter";
+  version = "0.1.0";
 
-    src = ../.;
-    sourceRoot = ".";
+  format = "pyproject";
 
-    propagatedBuildInputs = [ python3Packages.rich python3Packages.typer ];
+  src = lib.cleanSource ../.;
 
-    checkPhase = ''
-      ${pkgs.python3}/bin/python -c "import nix_flake_age_filter.nix_flake_age_update; print('import ok')"
-    '';
+  nativeBuildInputs = [ python.pkgs.hatchling ];
 
-    meta = with lib; {
-      description = "CLI that updates Nix flake inputs only if commits are older than a given minimum age";
-      homepage = "https://github.com/impure0xntk/nix-flake-age-filter";
-      license = licenses.mit;
-      maintainers = with maintainers; [];
-      platforms = platforms.unix;
-    };
+  propagatedBuildInputs = [ rich typer pygit2 requests whenever click shellingham typing-extensions ];
+
+  checkPhase = ''
+    ${python.interpreter} -c "from flake_age_filter.cli.main import app; print('import ok')"
+  '';
+
+  meta = with lib; {
+    description = "CLI that updates Nix flake inputs only if commits are older than a given minimum age";
+    homepage = "https://github.com/impure0xntk/nix-flake-age-filter";
+    license = licenses.mit;
+    maintainers = with maintainers; [];
+    platforms = platforms.unix;
   };
-in
-{
-  nix-flake-age-filter = pkg;
 }

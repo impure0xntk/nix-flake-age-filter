@@ -94,71 +94,6 @@
             inherit inputs minAgeDays referenceTime system excludeInputs;
           };
         });
-      # Build a CLI package that wraps verify and update scripts
-mkCliPackage = system:
-let
-pkgs = nixpkgs.legacyPackages.${system};
- python = pkgs.python3;
-
-# Copy Python scripts into a derivation
-src = pkgs.stdenv.mkDerivation {
-name = "nix-flake-age-cli-src";
-            src = ./.;
-            phases = [ "installPhase" ];
-            installPhase = ''
-              mkdir -p $out/libexec
-              cp -r ./src $out/libexec
-            '';
- '';
- };
-          };
-
-          # Main entry point: dispatch to subcommands
-          cliScript = pkgs.writeShellScript "nix-flake-age" ''
-            #!/usr/bin/env bash
-            set -euo pipefail
-
-            USAGE="Usage: nix-flake-age <command> [options]
-
-            Commands:
-              verify    Verify flake input ages against a minimum threshold
-              update    Update flake inputs but only adopt commits >= min-age
-
-            Use 'nix-flake-age <command> --help' for more information."
-
-            command="''${1:-}"
-            shift || true
-
-            case "$command" in
-              verify)
-                exec ${python.interpreter} ${src}/libexec/nix_flake_age_verify.py "$@"
-                ;;
-              update)
-                exec ${python.interpreter} ${src}/libexec/nix_flake_age_update.py "$@"
-                ;;
-              -h|--help|help)
-                echo "$USAGE"
-                exit 0
-                ;;
-              "")
-                echo "Error: no command specified" >&2
-                echo "$USAGE" >&2
-                exit 1
-                ;;
-              *)
-                echo "Error: unknown command '$command'" >&2
-                echo "$USAGE" >&2
-                exit 1
-                ;;
-            esac
-          '';
-          in
-          pkgs.writeShellApplication {
-            name = "nix-flake-age";
-            runtimeInputs = [ pkgs.git ];
-            text = builtins.readFile cliScript;
-            meta.mainProgram = "nix-flake-age";
-          };
 
     in
     {
@@ -174,35 +109,30 @@ name = "nix-flake-age-cli-src";
         inherit checkInputAge checkAllInputs mkAgeCheck mkChecks daysToSeconds;
       };
 
-      # CLI packages for nix run
+      # CLI packages for nix run - delegate to shell.nix which builds the Python package
       packages = lib.genAttrs nixpkgs.lib.systems.flakeExposed (system: {
-        default = mkCliPackage system;
-        nix-flake-age = mkCliPackage system;
+        default = nixpkgs.legacyPackages.${system}.callPackage ./nix/default.nix { }.nix-flake-age-filter;
+        nix-flake-age = nixpkgs.legacyPackages.${system}.callPackage ./nix/default.nix { }.nix-flake-age-filter;
       });
 
-      # Also provide legacyPackages for convenience
-      legacyPackages = lib.mapAttrs (_: system: {
-        nix-flake-age = mkCliPackage system;
-      }) nixpkgs.legacyPackages;
-
-# Self-check: verify this flake's own inputs
-checks = let
-minAgeDays = 3;
- referenceTime = self.lastModified or 0;
-in
-mkChecks {
-inputs = self.inputs;
-          inherit minAgeDays referenceTime;
-          excludeInputs = [ "self" "nixpkgs" ];
-        };
+      # Self-check: verify this flake's own inputs
+      checks = let
+        minAgeDays = 3;
+        referenceTime = self.lastModified or 0;
+      in
+      mkChecks {
+        inputs = self.inputs;
+        inherit minAgeDays referenceTime;
+        excludeInputs = [ "self" "nixpkgs" ];
+      };
 
       # Also expose verify via nix checks for CLI package
-apps = lib.genAttrs nixpkgs.lib.systems.flakeExposed (system: {
-default = {
-type = "app";
- program = "${self.packages.${system}.default}/bin/nix-flake-age";
-};
-});
+      apps = lib.genAttrs nixpkgs.lib.systems.flakeExposed (system: {
+        default = {
+          type = "app";
+          program = "${self.packages.${system}.default}/bin/nix-flake-age";
+        };
+      });
 
       # Development shell — delegates to shell.nix
       devShells = lib.genAttrs nixpkgs.lib.systems.flakeExposed (system: {

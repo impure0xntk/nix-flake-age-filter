@@ -88,10 +88,11 @@ def format_results(
             if verbose:
                 row.append(str(r.get("error", "")))
             table.add_row(*row)
-        console = Console()
+        from rich.console import Console
         from io import StringIO
         sio = StringIO()
-        console.print(table, file=sio)
+        console = Console(file=sio, force_terminal=False)
+        console.print(table)
         return sio.getvalue()
 
     # Plain‑text fallback – compute column widths

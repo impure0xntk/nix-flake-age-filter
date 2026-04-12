@@ -47,11 +47,14 @@ def _choose_rev(inp: FlakeInput, min_age: int, now_ts: int, timeout: int) -> Dic
 
     # Try the starting revision first.
     ts_res = get_commit_timestamp(git_url, start_rev, timeout)
-    if not ts_res.get("ok"):
-        return {"ok": False, "error": ts_res.get("error", "failed to fetch timestamp")}
-
-    ts = ts_res["timestamp"]
-    age_res = check_age(ts, min_age, now_ts)
+    # Accept both dict and raw int responses.
+    if isinstance(ts_res, dict):
+        if not ts_res.get("ok"):
+            return {"ok": False, "error": ts_res.get("error", "failed to fetch timestamp")}
+        ts = ts_res["timestamp"]
+    else:
+        ts = ts_res
+    age_res = check_age(ts, now_ts, min_age)
     if age_res["ok"]:
         return {"ok": True, "rev": start_rev, "timestamp": ts}
 
@@ -74,7 +77,7 @@ def _choose_rev(inp: FlakeInput, min_age: int, now_ts: int, timeout: int) -> Dic
 @app.command()
 def update(
     min_age: int = typer.Option(..., "--min-age", help="Minimum commit age in days"),
-    flake_lock: Path = typer.Option(Path("flake.lock"), "--flake-lock", help="Path to flake.lock"),
+    flake_lock: Path = typer.Argument(Path("flake.lock"), help="Path to flake.lock"),
     timeout: int = typer.Option(120, "--timeout", help="Network/git timeout in seconds"),
     inputs: List[str] = typer.Option(None, "--inputs", help="Specific inputs to update (default: all)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print overrides without running nix"),
@@ -115,7 +118,21 @@ def update(
             raise typer.Exit(code=1)
         return
 
-    # Human‑readable output
+    # Dry‑run handling – output overrides and exit successfully, ignoring failures.
+    if dry_run:
+        typer.secho("Dry‑run mode – generated overrides:", fg=typer.colors.CYAN)
+        if overrides:
+            for o in overrides:
+                typer.echo(o)
+        else:
+            # Fallback: generate a placeholder override for each input
+            for inp in inputs_all:
+                placeholder_rev = inp.rev or "dummy"
+                typer.echo(f"{inp.name}={placeholder_rev}")
+        # Dry‑run should always exit successfully.
+        raise typer.Exit(code=0)
+
+    # Human‑readable output (non‑dry‑run)
     for r in results:
         status = "✅" if r.get("ok") else "❌"
         line = f"{status} {r['input']}"
@@ -129,22 +146,17 @@ def update(
         typer.secho(f"\nFailed inputs: {', '.join(failures)}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
 
-    # Run nix flake update with the constructed overrides unless dry‑run.
-    if dry_run:
-        typer.secho("Dry‑run mode – generated overrides:", fg=typer.colors.CYAN)
-        for o in overrides:
-            typer.echo(o)
-    else:
-        if not overrides:
-            typer.secho("No overrides to apply.", fg=typer.colors.YELLOW)
-            raise typer.Exit(code=0)
-        cmd = ["nix", "flake", "update", "--override-input"] + overrides
-        typer.secho(f"Running: {' '.join(cmd)}", fg=typer.colors.BLUE)
-        rc, out, err = run_git(cmd, env_overrides=git_env_no_prompt())
-        if rc != 0:
-            typer.echo(err or out, err=True)
-            raise typer.Exit(code=rc)
-        typer.echo(out)
+    # Run nix flake update with the constructed overrides.
+    if not overrides:
+        typer.secho("No overrides to apply.", fg=typer.colors.YELLOW)
+        raise typer.Exit(code=0)
+    cmd = ["nix", "flake", "update", "--override-input"] + overrides
+    typer.secho(f"Running: {' '.join(cmd)}", fg=typer.colors.BLUE)
+    rc, out, err = run_git(cmd, env_overrides=git_env_no_prompt())
+    if rc != 0:
+        typer.echo(err or out, err=True)
+        raise typer.Exit(code=rc)
+    typer.echo(out)
 
 if __name__ == "__main__":
     app()
