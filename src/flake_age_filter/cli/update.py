@@ -19,6 +19,7 @@ from ..core.git_ops import (
     get_commit_timestamp,
     resolve_default_ref,
     run_git,
+    run_cmd,
     git_env_no_prompt,
 )
 from ..core.age_check import check_age
@@ -54,7 +55,7 @@ def _choose_rev(inp: FlakeInput, min_age: int, now_ts: int, timeout: int) -> Dic
         ts = ts_res["timestamp"]
     else:
         ts = ts_res
-    age_res = check_age(ts, now_ts, min_age)
+    age_res = check_age(ts, min_age, now_ts)
     if age_res["ok"]:
         return {"ok": True, "rev": start_rev, "timestamp": ts}
 
@@ -108,7 +109,7 @@ def update(
         res = _choose_rev(inp, min_age, now_ts, timeout)
         results.append({"input": inp.name, **res})
         if res.get("ok"):
-            overrides.append(f"{inp.name}={inp.to_flake_url(res['rev'])}")
+            overrides.append(inp.to_flake_url(res['rev']))
         else:
             failures.append(inp.name)
 
@@ -150,12 +151,22 @@ def update(
     if not overrides:
         typer.secho("No overrides to apply.", fg=typer.colors.YELLOW)
         raise typer.Exit(code=0)
-    cmd = ["nix", "flake", "update", "--override-input"] + overrides
+    # Build cmd: nix flake update --override-input <name> <url> --override-input ...
+    cmd = ["nix", "flake", "update"]
+    for o in overrides:
+        # Split "name=url" into name and url for --override-input flag
+        # The URL part may contain '=' (e.g., git+https://...?rev=xxx), so only split on the first '='
+        if "=" not in o:
+            typer.secho(f"Invalid override format: {o}", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+        name, url = o.split("=", 1)
+        cmd.extend(["--override-input", name, url])
     typer.secho(f"Running: {' '.join(cmd)}", fg=typer.colors.BLUE)
-    rc, out, err = run_git(cmd, env_overrides=git_env_no_prompt())
+    # Use a longer timeout for nix flake update (default 60s may be too short)
+    rc, out, err = run_cmd(cmd, env_overrides=git_env_no_prompt(), timeout=timeout * 2)
     if rc != 0:
         typer.echo(err or out, err=True)
-        raise typer.Exit(code=rc)
+        raise typer.Exit(code=rc if rc > 0 else 1)
     typer.echo(out)
 
 if __name__ == "__main__":
