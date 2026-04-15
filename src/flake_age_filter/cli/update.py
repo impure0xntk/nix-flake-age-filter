@@ -28,7 +28,7 @@ from ..core.errors import FlakeAgeError
 
 app = typer.Typer(help="Update flake inputs, ensuring each commit is at least a given age.")
 
-def _choose_rev(inp: FlakeInput, min_age: int, now_ts: int, timeout: int) -> Dict[str, object]:
+def _choose_rev(inp: FlakeInput, min_age: int, now_ts: int, timeout: int) -> Dict[str, object] | None:
     """Return a dict with a suitable rev (or error) for *inp*.
 
     The function first resolves the remote reference, then attempts to fetch the
@@ -37,10 +37,14 @@ def _choose_rev(inp: FlakeInput, min_age: int, now_ts: int, timeout: int) -> Dic
     using ``core.git_ops.find_oldest_commit_meeting_age`` (which internally
     prefers the GitHub API).  The returned dict mimics the legacy script's
     output structure.
+
+    Returns ``None`` for non‑git inputs (e.g. ``path`` type) which are skipped
+    from the age check.
     """
     git_url = inp.to_git_url()
     if not git_url:
-        return {"ok": False, "error": "non‑git input"}
+        # Skip path inputs – they are local and have no remote git history.
+        return None
 
     # Resolve the effective reference (branch/tag or remote default).
     effective_ref = resolve_default_ref(git_url, inp.ref, timeout)
@@ -107,6 +111,9 @@ def update(
 
     for inp in inputs_all:
         res = _choose_rev(inp, min_age, now_ts, timeout)
+        if res is None:
+            # Skip non‑git inputs (e.g. path inputs) – they have no remote history.
+            continue
         results.append({"input": inp.name, **res})
         if res.get("ok"):
             overrides.append(inp.to_flake_url(res['rev']))

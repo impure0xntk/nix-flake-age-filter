@@ -226,7 +226,7 @@ def resolve_default_ref(git_url: str, ref: str | None, timeout: int = 15) -> str
         for line in stdout.splitlines():
             if line.startswith("ref: refs/heads/"):
                 # Example: "ref: refs/heads/main\tHEAD"
-                return line.split()[0].split("refs/heads/")[1]
+                return line.split()[1].split("refs/heads/")[1]
 
     # GitHub specific fallback
     parsed = _parse_github_url(git_url)

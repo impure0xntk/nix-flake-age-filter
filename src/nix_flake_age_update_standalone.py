@@ -569,9 +569,10 @@ def main():
     for inp in inputs:
         git_url = inp.to_git_url()
         if not git_url:
-            results.append({"name": inp.name, "status": "SKIP", "reason": "no git URL"})
-            if not args.json_output:
-                print(f"  SKIP {inp.name}  no git URL", file=sys.stderr)
+            # Automatically ignore non‑git inputs (e.g., path inputs)
+            results.append({"name": inp.name, "status": "IGNORED", "reason": "non‑git input"})
+            if args.verbose and not args.json_output:
+                print(f"  IGNORED {inp.name}  non‑git input", file=sys.stderr)
             continue
         
         if args.verbose and not args.json_output:

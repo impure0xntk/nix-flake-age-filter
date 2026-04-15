@@ -27,16 +27,20 @@ app = typer.Typer(help="Verify that all flake inputs are at least a given age.")
 
 def _process_input(
     inp: FlakeInput, min_age: int, now_ts: int, timeout: int
-) -> Dict[str, object]:
+) -> Dict[str, object] | None:
     """Return a dict describing the age‑check result for a single input.
 
     ``now_ts`` is the current Unix epoch (seconds).  The function resolves the
     remote reference, fetches the commit timestamp (using the fast GitHub API
     when possible), and finally checks the age with ``core.age_check``.
+
+    Returns ``None`` for non‑git inputs (e.g. ``path`` type) which are skipped
+    from the age check.
     """
     git_url = inp.to_git_url()
     if not git_url:
-        return {"ok": False, "error": "non‑git input"}
+        # Skip path inputs – they are local and have no remote git history.
+        return None
 
     # Resolve the ref (branch/tag) to use for the remote query.
     effective_ref = resolve_default_ref(git_url, inp.ref, timeout)
@@ -95,6 +99,9 @@ def verify(
     failures: List[str] = []
     for inp in inputs_all:
         res = _process_input(inp, min_age, now_ts, timeout)
+        if res is None:
+            # Skip non‑git inputs (e.g. path inputs) – they have no remote history.
+            continue
         results.append(res)
         if not res.get("ok"):
             failures.append(inp.name)
