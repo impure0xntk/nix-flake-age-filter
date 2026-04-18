@@ -15,13 +15,9 @@ from typing import List, Dict
 import typer
 
 from ..core.lock_file import read_flake_inputs
-from ..core.git_ops import (
-    get_commit_timestamp,
-    resolve_default_ref,
-    run_git,
-    run_cmd,
-    git_env_no_prompt,
-)
+from ..core import git_ops
+from ..core.git_ops import run_cmd, git_env_no_prompt
+
 from ..core.age_check import check_age
 from ..core.models import FlakeInput
 from ..core.errors import FlakeAgeError
@@ -47,11 +43,11 @@ def _choose_rev(inp: FlakeInput, min_age: int, now_ts: int, timeout: int) -> Dic
         return None
 
     # Resolve the effective reference (branch/tag or remote default).
-    effective_ref = resolve_default_ref(git_url, inp.ref, timeout)
+    effective_ref = git_ops.resolve_default_ref(git_url, inp.ref, timeout)
     start_rev = inp.rev or effective_ref
 
     # Try the starting revision first.
-    ts_res = get_commit_timestamp(git_url, start_rev, timeout)
+    ts_res = git_ops.get_commit_timestamp(git_url, start_rev, timeout)
     # Accept both dict and raw int responses.
     if isinstance(ts_res, dict):
         if not ts_res.get("ok"):
@@ -59,14 +55,13 @@ def _choose_rev(inp: FlakeInput, min_age: int, now_ts: int, timeout: int) -> Dic
         ts = ts_res["timestamp"]
     else:
         ts = ts_res
-    age_res = check_age(ts, min_age, now_ts)
-    if age_res["ok"]:
-        return {"ok": True, "rev": start_rev, "timestamp": ts}
-
-    # Need to find an older commit.
-    from ..core.git_ops import find_oldest_commit_meeting_age
-
-    find_res = find_oldest_commit_meeting_age(
+    age_res = check_age(ts, now_ts, min_age)
+    # Note: check_age always returns ok=True, but sets error if age < min_age
+    
+    # Always search for the best (newest) commit that meets min_age.
+    # This ensures we update to a newer commit if one exists, even if the
+    # current locked commit already passes the age check.
+    find_res = git_ops.find_oldest_commit_meeting_age(
         git_url=git_url,
         ref=effective_ref,
         min_age_days=min_age,
@@ -82,10 +77,10 @@ def _choose_rev(inp: FlakeInput, min_age: int, now_ts: int, timeout: int) -> Dic
 @app.command()
 def update(
     min_age: int = typer.Option(..., "--min-age", help="Minimum commit age in days"),
-    flake_lock: Path = typer.Argument(Path("flake.lock"), help="Path to flake.lock"),
+    flake_lock: Path = typer.Argument(..., help="Path to flake.lock"),
     timeout: int = typer.Option(120, "--timeout", help="Network/git timeout in seconds"),
     inputs: List[str] = typer.Option(None, "--inputs", help="Specific inputs to update (default: all)"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Print overrides without running nix"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print overrides without running nix", is_flag=True),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON result"),
     verbose: bool = typer.Option(False, "--verbose", help="Show detailed per‑input info"),
 ):
@@ -132,11 +127,6 @@ def update(
         if overrides:
             for o in overrides:
                 typer.echo(o)
-        else:
-            # Fallback: generate a placeholder override for each input
-            for inp in inputs_all:
-                placeholder_rev = inp.rev or "dummy"
-                typer.echo(f"{inp.name}={placeholder_rev}")
         # Dry‑run should always exit successfully.
         raise typer.Exit(code=0)
 
