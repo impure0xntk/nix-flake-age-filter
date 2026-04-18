@@ -7,6 +7,7 @@ modules (`core.lock_file`, `core.git_ops`, `core.age_check`).
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import sys
 from pathlib import Path
@@ -78,6 +79,7 @@ def verify(
     inputs: List[str] = typer.Option(None, "--inputs", help="Specific inputs to check (default: all)"),
     json_out: bool = typer.Option(False, "--json", help="Output results as JSON"),
     verbose: bool = typer.Option(False, "--verbose", help="Show detailed per‑input information"),
+    parallel: int = typer.Option(4, "--parallel", help="Number of parallel workers (default=4)", min=0),
 ):
     """Validate that each flake input is at least ``min_age`` days old.
 
@@ -97,11 +99,14 @@ def verify(
     now_ts = int(__import__("time").time())
     results: List[Dict[str, object]] = []
     failures: List[str] = []
-    for inp in inputs_all:
-        res = _process_input(inp, min_age, now_ts, timeout)
-        if res is None:
-            # Skip non‑git inputs (e.g. path inputs) – they have no remote history.
-            continue
+
+    from ..core.parallel import execute_parallel
+
+    def _process_verify_inp(inp: FlakeInput) -> dict | None:
+        return _process_input(inp, min_age, now_ts, timeout)
+
+    processed = execute_parallel(inputs_all, _process_verify_inp, parallel)
+    for inp, res in processed:
         results.append(res)
         if not res.get("ok"):
             failures.append(inp.name)

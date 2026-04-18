@@ -80,10 +80,10 @@ def update(
     flake_lock: Path = typer.Argument(..., help="Path to flake.lock"),
     timeout: int = typer.Option(120, "--timeout", help="Network/git timeout in seconds"),
     inputs: List[str] = typer.Option(None, "--inputs", help="Specific inputs to update (default: all)"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Print overrides without running nix", is_flag=True),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print overrides without running nix"),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON result"),
     verbose: bool = typer.Option(False, "--verbose", help="Show detailed per‑input info"),
-    parallel: int = typer.Option(0, "--parallel", help="Number of parallel workers (0=serial)", min=0),
+    parallel: int = typer.Option(4, "--parallel", help="Number of parallel workers (default=4)", min=0),
 ):
     """Update flake inputs that are older than ``min_age`` days.
 
@@ -107,30 +107,18 @@ def update(
 
 
 
-    # Process inputs in parallel if requested
-    if parallel > 0:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
-            future_to_inp = {executor.submit(_choose_rev, inp, min_age, now_ts, timeout): inp for inp in inputs_all}
-            for future in concurrent.futures.as_completed(future_to_inp):
-                inp = future_to_inp[future]
-                res = future.result()
-                if res is None:
-                    continue
-                results.append({"input": inp.name, **res})
-                if res.get("ok"):
-                    overrides.append(inp.to_flake_url(res['rev']))
-                else:
-                    failures.append(inp.name)
-    else:
-        for inp in inputs_all:
-            res = _choose_rev(inp, min_age, now_ts, timeout)
-            if res is None:
-                continue
-            results.append({"input": inp.name, **res})
-            if res.get("ok"):
-                overrides.append(inp.to_flake_url(res['rev']))
-            else:
-                failures.append(inp.name)
+    from ..core.parallel import execute_parallel
+
+    def _process_update_inp(inp: FlakeInput) -> dict | None:
+        return _choose_rev(inp, min_age, now_ts, timeout)
+
+    processed = execute_parallel(inputs_all, _process_update_inp, parallel)
+    for inp, res in processed:
+        results.append({"input": inp.name, **res})
+        if res.get("ok"):
+            overrides.append(inp.to_flake_url(res['rev']))
+        else:
+            failures.append(inp.name)
 
     if json_out:
         typer.echo(json.dumps({"results": results, "overrides": overrides}, indent=2))
