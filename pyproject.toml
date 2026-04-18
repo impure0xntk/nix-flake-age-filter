@@ -11,7 +11,7 @@ name = "nix-flake-age-filter"
 version = "0.1.0"
 description = "Nix flake input age filter CLI"
 authors = [{name = "impure0xntk", email = "you@example.com"}]
-license = {text = "MIT"}
+license = {text = "Apache-2.0"}
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = ["rich>=13.0.0", "typer>=0.12.0", "pygit2>=1.12.0", "requests>=2.28.0", "whenever>=0.6.0", "click>=8.0.0", "shellingham>=1.5.0", "typing-extensions>=4.0.0"]

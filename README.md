@@ -2,10 +2,9 @@
 
 **Repository Overview**
 
-This repository provides a pure‑Python implementation of a *minimum release‑age* filter for Nix flake inputs. The tool validates that each input in `flake.lock` is older than a configurable number of days and can automatically downgrade inputs that are too recent. It is packaged as a standard Python library with a Typer‑based CLI (`flake-age`).
+This repository provides a pure‑Python implementation of a *minimum release‑age* filter for Nix flake inputs. The tool validates that each input in `flake.lock` is older than a configurable number of days and can automatically downgrade inputs that are too recent. It is packaged as a standard Python library with a Typer‑based CLI (`nix-flake-age`).
 
 The legacy entry points `nix_flake_age_filter.py`, `nix_flake_age_update.py` and the compatibility shim `flake_age_common.py` have been removed.
-
 
 A lightweight CLI tool that enforces a **minimum commit age** on Nix flake inputs, similar to npm's `min-release-age`. It works with plain Git (no auth tokens) and can be used both as a library and as a command‑line utility.
 
@@ -35,13 +34,13 @@ pip install .
 
 ```bash
 # Verify that all inputs are at least 30 days old
-flake-age verify --min-age 30 flake.lock
+nix-flake-age verify --min-age 30 flake.lock
 
 # Dry‑run an update (shows what would be overridden but does not modify)
-flake-age update --min-age 30 --dry-run flake.lock
+nix-flake-age update --min-age 30 --dry-run flake.lock
 
 # Emit JSON for automation pipelines
-flake-age verify --min-age 30 --json flake.lock
+nix-flake-age verify --min-age 30 --json flake.lock
 ```
 
 ### Flags
@@ -68,23 +67,6 @@ nix develop
 python -m pytest -q
 ```
 
-
-```bash
-# Enter the development environment
-nix develop
-
-# Execute all unit tests
-python -m unittest discover -v
-```
-
-The suite covers:
-
-- Model helpers (`tests/test_models.py`).
-- Lock‑file parsing (`tests/test_lock_file.py`).
-- Age calculations (`tests/unit/test_age_check.py`).
-- Git utilities (`tests/unit/test_git_ops.py`).
-- CLI behavior (`tests/unit/test_cli_verify.py`, `tests/unit/test_cli_update.py`).
-
 ### Lint & type checking
 
 ```bash
@@ -94,30 +76,18 @@ mypy src
 
 ### Continuous Integration
 
-GitHub Actions runs the same commands (`nix develop -c python -m unittest discover -v`, `ruff`, `mypy`). See `.github/workflows/ci.yml`.
+GitHub Actions runs the same commands (`nix develop -c python -m pytest -q`, `ruff`, `mypy`). See `.github/workflows/ci.yml`.
 
 ### Packaging
 
 `pyproject.toml` defines the package and entry point:
 
-```toml
-[project]
-name = "flake-age-filter"
-...
-packages = [{include = "flake_age_filter"}]
-
-[project.scripts]
-flake-age = "flake_age_filter.cli.main:app"
-```
-
-After `pip install .`, the `flake-age` command is available on the PATH.
-
----
+After `pip install .`, the `nix-flake-age` command is available on the PATH.
 
 ## Contributing
 
 1. Fork the repository.
 2. Create a feature branch.
 3. Write tests for your changes.
-4. Ensure `nix develop && python -m unittest discover -v` passes.
+4. Ensure `nix develop && python -m pytest -q` passes.
 5. Open a Pull Request.
