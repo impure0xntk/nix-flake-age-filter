@@ -17,7 +17,6 @@ import typer
 
 from ..core.lock_file import read_flake_inputs
 from ..core import git_ops
-from ..core.git_ops import run_cmd, git_env_no_prompt
 
 from ..core.age_check import check_age
 from ..core.models import FlakeInput
@@ -165,7 +164,7 @@ def update(
         cmd.extend(["--override-input", name, url])
     typer.secho(f"Running: {' '.join(cmd)}", fg=typer.colors.BLUE)
     # Use a longer timeout for nix flake update (default 60s may be too short)
-    rc, out, err = run_cmd(cmd, env_overrides=git_env_no_prompt(), timeout=timeout * 2)
+    rc, out, err = git_ops.run_cmd(cmd, env_overrides=git_ops.git_env_no_prompt(), timeout=timeout * 2)
     if rc != 0:
         typer.echo(err or out, err=True)
         raise typer.Exit(code=rc if rc > 0 else 1)

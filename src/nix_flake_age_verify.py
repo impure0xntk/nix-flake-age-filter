@@ -15,7 +15,7 @@ import typer
 from age_check import check_age, format_duration
 from commit_fetch import get_commit_timestamp
 from flake_lock import extract_locked_inputs, parse_flake_lock
-from git_operations import ls_remote_refs
+from flake_age_filter.core.git_ops import ls_remote_refs
 
 app = typer.Typer(
     name="nix-flake-age-verify",
