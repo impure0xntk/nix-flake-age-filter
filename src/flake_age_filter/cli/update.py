@@ -6,6 +6,7 @@ uses the new core modules and Typer for a clean sub‑command interface.
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import subprocess
 import sys
@@ -56,11 +57,10 @@ def _choose_rev(inp: FlakeInput, min_age: int, now_ts: int, timeout: int) -> Dic
     else:
         ts = ts_res
     age_res = check_age(ts, now_ts, min_age)
-    # Note: check_age always returns ok=True, but sets error if age < min_age
-    
-    # Always search for the best (newest) commit that meets min_age.
-    # This ensures we update to a newer commit if one exists, even if the
-    # current locked commit already passes the age check.
+    if age_res.get("ok"):
+        # The current commit is old enough -> use it.
+        return {"ok": True, "rev": start_rev, "timestamp": ts}
+    # Otherwise, too new -> look for an older commit that meets the age requirement.
     find_res = git_ops.find_oldest_commit_meeting_age(
         git_url=git_url,
         ref=effective_ref,
@@ -83,6 +83,7 @@ def update(
     dry_run: bool = typer.Option(False, "--dry-run", help="Print overrides without running nix", is_flag=True),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON result"),
     verbose: bool = typer.Option(False, "--verbose", help="Show detailed per‑input info"),
+    parallel: int = typer.Option(0, "--parallel", help="Number of parallel workers (0=serial)", min=0),
 ):
     """Update flake inputs that are older than ``min_age`` days.
 
@@ -104,16 +105,32 @@ def update(
     overrides: List[str] = []
     failures: List[str] = []
 
-    for inp in inputs_all:
-        res = _choose_rev(inp, min_age, now_ts, timeout)
-        if res is None:
-            # Skip non‑git inputs (e.g. path inputs) – they have no remote history.
-            continue
-        results.append({"input": inp.name, **res})
-        if res.get("ok"):
-            overrides.append(inp.to_flake_url(res['rev']))
-        else:
-            failures.append(inp.name)
+
+
+    # Process inputs in parallel if requested
+    if parallel > 0:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
+            future_to_inp = {executor.submit(_choose_rev, inp, min_age, now_ts, timeout): inp for inp in inputs_all}
+            for future in concurrent.futures.as_completed(future_to_inp):
+                inp = future_to_inp[future]
+                res = future.result()
+                if res is None:
+                    continue
+                results.append({"input": inp.name, **res})
+                if res.get("ok"):
+                    overrides.append(inp.to_flake_url(res['rev']))
+                else:
+                    failures.append(inp.name)
+    else:
+        for inp in inputs_all:
+            res = _choose_rev(inp, min_age, now_ts, timeout)
+            if res is None:
+                continue
+            results.append({"input": inp.name, **res})
+            if res.get("ok"):
+                overrides.append(inp.to_flake_url(res['rev']))
+            else:
+                failures.append(inp.name)
 
     if json_out:
         typer.echo(json.dumps({"results": results, "overrides": overrides}, indent=2))

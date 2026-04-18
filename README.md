@@ -53,6 +53,7 @@ flake-age verify --min-age 30 --json flake.lock
 | `--json` | Output results as JSON (machine‑readable). |
 | `--verbose` | Show detailed progress information. |
 | `--exclude INPUT` | Skip specific inputs; can be repeated. |
+| `--parallel N` | Number of parallel workers (0=serial). |
 
 ## Development
 
