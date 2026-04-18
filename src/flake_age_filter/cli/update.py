@@ -24,7 +24,7 @@ from ..core.errors import FlakeAgeError
 
 app = typer.Typer(help="Update flake inputs, ensuring each commit is at least a given age.")
 
-def _choose_rev(inp: FlakeInput, min_age: int, now_ts: int, timeout: int) -> Dict[str, object] | None:
+def _choose_rev(inp: FlakeInput, min_age: int, now_ts: int, timeout: int, method: str = "auto") -> Dict[str, object] | None:
     """Return a dict with a suitable rev (or error) for *inp*.
 
     The function first resolves the remote reference, then attempts to fetch the
@@ -83,6 +83,7 @@ def update(
     json_out: bool = typer.Option(False, "--json", help="Emit JSON result"),
     verbose: bool = typer.Option(False, "--verbose", help="Show detailed per‑input info"),
     parallel: int = typer.Option(4, "--parallel", help="Number of parallel workers (default=4)", min=0),
+    method: str = typer.Option("auto", "--method", help="Commit search method: github, pygit2, subprocess, or auto"),
 ):
     """Update flake inputs that are older than ``min_age`` days.
 
@@ -109,7 +110,7 @@ def update(
     from ..core.parallel import execute_parallel
 
     def _process_update_inp(inp: FlakeInput) -> dict | None:
-        return _choose_rev(inp, min_age, now_ts, timeout)
+        return _choose_rev(inp, min_age, now_ts, timeout, method=method)
 
     processed = execute_parallel(inputs_all, _process_update_inp, parallel)
     for inp, res in processed:

@@ -252,6 +252,7 @@ def find_oldest_commit_meeting_age(
     locked_ts: int | None = None,
     input_name: str = "",
     original: dict | None = None,
+    method: str = "auto",
 ) -> Dict[str, Any]:
     """Return information about the newest commit that is at least ``min_age_days`` old.
 
@@ -264,6 +265,12 @@ def find_oldest_commit_meeting_age(
        bare repository and the history is walked using libgit2.
     3. **Fallback to subprocess ``git``** – retained for robustness but not the
        primary path.
+
+    The ``method`` argument selects which path to use:
+      - "github": only try the GitHub API (if not a GitHub URL, returns failure)
+      - "pygit2": only try the pygit2 implementation
+      - "subprocess": only try the subprocess git implementation
+      - "auto": try GitHub (if applicable), then pygit2, then subprocess
     """
     now = datetime.now(tz=timezone.utc)
     cutoff_ts = int(now.timestamp()) - min_age_days * 86_400
@@ -271,27 +278,56 @@ def find_oldest_commit_meeting_age(
     # Resolve the ref (branch/tag) to use for the remote query.
     resolved_ref = resolve_default_ref(git_url, ref, timeout)
 
-    # -------------------------------------------------------------------
-    # GitHub fast path – the API can answer the query without cloning.
-    # -------------------------------------------------------------------
-    if "github.com" in git_url:
-        parsed = _parse_github_url(git_url)
-        if parsed:
-            owner, repo = parsed
-            return _github_api_find_at_cutoff(
-                owner, repo, resolved_ref, cutoff_ts, min_age_days, timeout
-            )
+    def _try_github() -> Dict[str, Any] | None:
+        if "github.com" in git_url:
+            parsed = _parse_github_url(git_url)
+            if parsed:
+                owner, repo = parsed
+                return _github_api_find_at_cutoff(
+                    owner, repo, resolved_ref, cutoff_ts, min_age_days, timeout
+                )
+        return None
 
-    # -------------------------------------------------------------------
-    # Generic git – use pygit2 for an in‑process shallow fetch.
-    # -------------------------------------------------------------------
-    return _find_via_pygit2(
-        git_url,
-        resolved_ref,
-        min_age_days,
-        cutoff_ts,
-        timeout,
-    )
+    def _try_pygit2() -> Dict[str, Any]:
+        return _find_via_pygit2(
+            git_url,
+            resolved_ref,
+            min_age_days,
+            cutoff_ts,
+            timeout,
+        )
+
+    def _try_subprocess() -> Dict[str, Any]:
+        return _find_via_subprocess(
+            git_url,
+            resolved_ref,
+            min_age_days,
+            cutoff_ts,
+            min_depth,
+            max_depth,
+            timeout,
+        )
+
+    if method == "github":
+        res = _try_github()
+        return res if res is not None else {"ok": False, "error": "GitHub method requested but not a GitHub URL"}
+    if method == "pygit2":
+        return _try_pygit2()
+    if method == "subprocess":
+        return _try_subprocess()
+    # auto
+    res = _try_github()
+    if res is not None:
+        return res
+    res = _try_pygit2()
+    # We could check if pygit2 succeeded, but for simplicity we just fallback to subprocess if pygit2 fails?
+    # However, the original pygit2 function already returns a dict with ok=False on failure.
+    # We'll treat any pygit2 result as final (even if not ok) because we want to respect the user's choice of method order.
+    # But the spec says auto should try GitHub, then pygit2, then subprocess.
+    # So we only fallback to subprocess if pygit2 also failed (i.e., ok=False).
+    if res.get("ok", False):
+        return res
+    return _try_subprocess()
 
 # ---------------------------------------------------------------------------
 # Internal helpers for the GitHub and pygit2 pathways
@@ -550,6 +586,135 @@ def _find_via_pygit2(
             pass
 
         return _head_too_new(head_hash, head_ts, depth=0)
+
+def _find_via_subprocess(
+    git_url: str,
+    ref: str,
+    min_age_days: int,
+    cutoff_ts: int,
+    min_depth: int = 100,
+    max_depth: int = 3000,
+    timeout: int = 300,
+) -> Dict[str, Any]:
+    """Find a commit meeting the age requirement using subprocess git commands.
+
+    Performs iterative shallow fetches in a temporary bare repository, increasing
+    depth until a commit older than the cutoff is found or max_depth is exceeded.
+    """
+    now = datetime.now(tz=timezone.utc)
+
+    def _make_result(commit_hash: str, ts: int, depth: int) -> Dict[str, Any]:
+        dt = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        return {
+            "ok": True,
+            "rev": commit_hash,
+            "timestamp": ts,
+            "depth": depth,
+            "date": dt,
+            "error": None,
+            "too_new_commit": None,
+            "too_new_timestamp": None,
+            "too_new_date": None,
+        }
+
+    def _head_too_new(commit_hash: str, ts: int, depth: int) -> Dict[str, Any]:
+        age = (int(now.timestamp()) - ts) / 86_400
+        dt = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        return {
+            "ok": False,
+            "rev": None,
+            "timestamp": None,
+            "depth": depth,
+            "date": "",
+            "error": f"HEAD is only {age:.1f}d old (needs {min_age_days}d)",
+            "too_new_commit": commit_hash,
+            "too_new_timestamp": ts,
+            "too_new_date": dt,
+        }
+
+    with tempfile.TemporaryDirectory(prefix="nix-age-subprocess-") as tmpdir:
+        bare = str(Path(tmpdir) / "bare.git")
+        # Initialize bare repository
+        rc, _, err = run_git(["init", "--bare", bare])
+        if rc != 0:
+            return {"ok": False, "error": f"git init failed: {err}"}
+
+        env = git_env_no_prompt()
+        remote_name = "origin"
+
+        # Add remote
+        rc, _, err = run_git(["remote", "add", remote_name, git_url], cwd=bare, env_overrides=env)
+        if rc != 0:
+            return {"ok": False, "error": f"remote add failed: {err}"}
+
+        # Determine refspec: we want to fetch the given ref (could be HEAD, branch, tag)
+        # We'll fetch into a temporary local branch `_` to inspect.
+        # For simplicity, we fetch the ref directly into FETCH_HEAD.
+        # We'll use `git fetch <remote> <refspec>` where refspec is the ref we want.
+        # If ref is HEAD, we fetch HEAD.
+        # Otherwise we try branch then tag.
+        def fetch_refspec(depth: int) -> bool:
+            args = ["fetch", "--depth", str(depth), "--no-tags", remote_name]
+            if ref == "HEAD":
+                args.append("HEAD")
+            else:
+                # Try branch
+                args.append(f"refs/heads/{ref}")
+            rc, _, err = run_git(args, cwd=bare, env_overrides=env, timeout=timeout)
+            if rc == 0:
+                return True
+            # If branch failed, try tag
+            args = ["fetch", "--depth", str(depth), "--no-tags", remote_name,
+                    f"refs/tags/{ref}"]
+            rc, _, err = run_git(args, cwd=bare, env_overrides=env, timeout=timeout)
+            return rc == 0
+
+        # Start with min_depth
+        depth = min_depth
+        while depth <= max_depth:
+            if not fetch_refspec(depth):
+                return {"ok": False, "error": f"fetch failed at depth {depth}"}
+            # Get the latest commit from FETCH_HEAD
+            rc, out, err = run_git(
+                ["log", "--format=%H %at", "-1", "FETCH_HEAD"],
+                cwd=bare,
+                env_overrides=env,
+                timeout=timeout,
+            )
+            if rc != 0:
+                return {"ok": False, "error": f"log failed: {err}"}
+            parts = out.strip().split()
+            if len(parts) != 2:
+                return {"ok": False, "error": f"unexpected log output: {out}"}
+            commit_hash, ts_str = parts
+            if not ts_str.isdigit():
+                return {"ok": False, "error": f"non-numeric timestamp: {ts_str}"}
+            ts = int(ts_str)
+            if ts <= cutoff_ts:
+                # Found a commit old enough
+                return _make_result(commit_hash, ts, depth)
+            # Otherwise, too new, increase depth
+            depth = min(depth * 2, max_depth)
+
+        # Exceeded max_depth without finding old enough commit
+        # Get HEAD commit to report how new it is
+        rc, out, err = run_git(
+            ["log", "--format=%H %at", "-1", "FETCH_HEAD"],
+            cwd=bare,
+            env_overrides=env,
+            timeout=timeout,
+        )
+        if rc != 0:
+            return {"ok": False, "error": f"final log failed: {err}"}
+        parts = out.strip().split()
+        if len(parts) != 2:
+            return {"ok": False, "error": f"unexpected final log output: {out}"}
+        commit_hash, ts_str = parts
+        if not ts_str.isdigit():
+            return {"ok": False, "error": f"non-numeric timestamp: {ts_str}"}
+        ts = int(ts_str)
+        return _head_too_new(commit_hash, ts, depth=depth)
+
 
 # ---------------------------------------------------------------------------
 # Compatibility shim – original ``check_age`` function used ``datetime`` directly.

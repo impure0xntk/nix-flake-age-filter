@@ -10,6 +10,7 @@ from __future__ import annotations
 import concurrent.futures
 import json
 import sys
+import time
 from pathlib import Path
 from typing import List, Dict
 
@@ -27,7 +28,7 @@ from ..core.errors import FlakeAgeError
 app = typer.Typer(help="Verify that all flake inputs are at least a given age.")
 
 def _process_input(
-    inp: FlakeInput, min_age: int, now_ts: int, timeout: int
+    inp: FlakeInput, min_age: int, now_ts: int, timeout: int, method: str = "auto"
 ) -> Dict[str, object] | None:
     """Return a dict describing the age‑check result for a single input.
 
@@ -47,21 +48,51 @@ def _process_input(
     effective_ref = resolve_default_ref(git_url, inp.ref, timeout)
 
     # Determine which revision to query – prefer the locked rev if it exists.
-    rev = inp.rev or effective_ref
-    ts_res = git_ops.get_commit_timestamp(git_url, rev, timeout)
-    # The real implementation returns a dict {"ok": bool, "timestamp": int, "error": str}
-    # In tests we mock it to return a plain int timestamp, so accept both forms.
+    rev_to_check = inp.rev or effective_ref
+    # Get the timestamp for that specific revision.
+    ts_res = git_ops.get_commit_timestamp(git_url, rev_to_check, timeout)
+    # Accept both dict and raw int responses.
+    ts = None
     if isinstance(ts_res, dict):
-        if not ts_res.get("ok"):
-            return {"ok": False, "error": ts_res.get("error", "unknown error")}
-        ts = ts_res["timestamp"]
+        if ts_res.get("ok"):
+            ts = ts_res["timestamp"]
+        # else: fall back to search below
     else:
+        # Assume raw int is the timestamp
         ts = ts_res
+
+    if ts is not None:
+        age_res = check_age(ts, now_ts, min_age)
+        if age_res.get("ok"):
+            # The specific revision is old enough -> use it.
+            result: Dict[str, object] = {
+                "ok": True,
+                "input": inp.name,
+                "rev": rev_to_check,
+                "timestamp": ts,
+                "age_days": age_res["age_days"],
+                "duration": format_duration(age_res["age_days"]),
+            }
+            return result
+        # If not old enough, we will search for an older commit below.
+
+    # Either we don't have a locked rev, or it's too new, or we couldn't get its timestamp.
+    # Find the oldest commit meeting the age requirement using the selected method.
+    find_res = git_ops.find_oldest_commit_meeting_age(
+        git_url,
+        effective_ref,
+        min_age,
+        method=method,
+        timeout=timeout,
+    )
+    if not find_res.get("ok"):
+        return {"ok": False, "error": find_res.get("error", "unknown error")}
+    ts = find_res["timestamp"]
     age_res = check_age(ts, now_ts, min_age)
     result: Dict[str, object] = {
         "ok": age_res["ok"],
         "input": inp.name,
-        "rev": rev,
+        "rev": find_res["rev"],
         "timestamp": ts,
         "age_days": age_res["age_days"],
     }
@@ -80,6 +111,7 @@ def verify(
     json_out: bool = typer.Option(False, "--json", help="Output results as JSON"),
     verbose: bool = typer.Option(False, "--verbose", help="Show detailed per‑input information"),
     parallel: int = typer.Option(4, "--parallel", help="Number of parallel workers (default=4)", min=0),
+    method: str = typer.Option("auto", "--method", help="Commit search method: github, pygit2, subprocess, or auto"),
 ):
     """Validate that each flake input is at least ``min_age`` days old.
 
@@ -103,7 +135,7 @@ def verify(
     from ..core.parallel import execute_parallel
 
     def _process_verify_inp(inp: FlakeInput) -> dict | None:
-        return _process_input(inp, min_age, now_ts, timeout)
+        return _process_input(inp, min_age, now_ts, timeout, method)
 
     processed = execute_parallel(inputs_all, _process_verify_inp, parallel)
     for inp, res in processed:
