@@ -23,14 +23,12 @@ from __future__ import annotations
 
 from typing import Iterable, List, Mapping
 
-# The core ``format_duration`` function is re‑exported for convenience.
-from ..core.age_check import format_duration
-
 
 def _try_import_rich():
     try:
         from rich.table import Table
         from rich.console import Console
+
         return Table, Console
     except Exception:  # pragma: no cover – import failure path
         return None, None
@@ -90,13 +88,17 @@ def format_results(
             table.add_row(*row)
         from rich.console import Console
         from io import StringIO
+
         sio = StringIO()
         console = Console(file=sio, force_terminal=False)
         console.print(table)
         return sio.getvalue()
 
     # Plain‑text fallback – compute column widths
-    col_widths = [max(len(h), max(len(str(r.get(k.lower(), "-"))) for r in results)) for h, k in zip(headers, headers)]
+    col_widths = [
+        max(len(h), max(len(str(r.get(k.lower(), "-"))) for r in results))
+        for h, k in zip(headers, headers)
+    ]
     # Ensure a minimum width for readability
     col_widths = [max(w, 8) for w in col_widths]
     lines = [_plain_row(headers, col_widths)]

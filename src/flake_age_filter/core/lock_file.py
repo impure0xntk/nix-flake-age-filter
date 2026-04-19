@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from .models import FlakeInput
 from .errors import FlakeLockNotFoundError
@@ -48,7 +48,7 @@ def extract_locked_inputs(lock_data: Dict[str, Any]) -> List[FlakeInput]:
     if isinstance(root_inputs_raw, dict) and root_inputs_raw:
         for name, target in root_inputs_raw.items():
             # Strip possible namespace prefixes (e.g., "inputs/")
-            name = name.split('/')[-1]
+            name = name.split("/")[-1]
             if isinstance(target, str):
                 node_name = target
             elif isinstance(target, list) and len(target) > 0:
@@ -72,7 +72,7 @@ def extract_locked_inputs(lock_data: Dict[str, Any]) -> List[FlakeInput]:
     elif isinstance(root_inputs_raw, list) and root_inputs_raw:
         for node_name in root_inputs_raw:
             # Strip possible namespace prefixes (e.g., "inputs/")
-            node_name = node_name.split('/')[-1]
+            node_name = node_name.split("/")[-1]
             node_data = nodes.get(node_name)
             if not node_data or "locked" not in node_data:
                 continue
@@ -91,7 +91,7 @@ def extract_locked_inputs(lock_data: Dict[str, Any]) -> List[FlakeInput]:
             if name == "root" or "locked" not in node_data:
                 continue
             # Strip possible namespace prefixes (e.g., "inputs/")
-            clean_name = name.split('/')[-1]
+            clean_name = name.split("/")[-1]
             inputs.append(
                 FlakeInput(
                     name=clean_name,
@@ -111,6 +111,6 @@ def read_flake_inputs(flake_lock_path: str | Path) -> List[FlakeInput]:
         inputs = extract_locked_inputs(lock_data)
 
     This function exists to provide a single call‑site for the CLI modules.
-    """
+    """  # noqa: D401
     lock_data = parse_flake_lock(flake_lock_path)
     return extract_locked_inputs(lock_data)

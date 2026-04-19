@@ -7,25 +7,24 @@ modules (`core.lock_file`, `core.git_ops`, `core.age_check`).
 
 from __future__ import annotations
 
-import concurrent.futures
 import json
-import sys
-import time
 from pathlib import Path
-from typing import List, Dict
+from typing import Dict, List
 
 import typer
 
-from ..core.lock_file import read_flake_inputs
 from ..core import git_ops
+from ..core.age_check import check_age, format_duration
+from ..core.errors import FlakeAgeError
 from ..core.git_ops import (
     resolve_default_ref,
 )
-from ..core.age_check import check_age, format_duration
+from ..core.lock_file import read_flake_inputs
 from ..core.models import FlakeInput
-from ..core.errors import FlakeAgeError
+
 
 app = typer.Typer(help="Verify that all flake inputs are at least a given age.")
+
 
 def _process_input(
     inp: FlakeInput, min_age: int, now_ts: int, timeout: int, method: str = "auto"
@@ -102,16 +101,29 @@ def _process_input(
         result["duration"] = format_duration(age_res["age_days"])
     return result
 
+
 @app.command()
 def verify(
     min_age: int = typer.Option(..., "--min-age", help="Minimum age in days"),
     flake_lock: Path = typer.Argument(Path("flake.lock"), help="Path to flake.lock"),
-    timeout: int = typer.Option(120, "--timeout", help="Network/git timeout in seconds"),
-    inputs: List[str] = typer.Option(None, "--inputs", help="Specific inputs to check (default: all)"),
+    timeout: int = typer.Option(
+        120, "--timeout", help="Network/git timeout in seconds"
+    ),
+    inputs: List[str] = typer.Option(
+        None, "--inputs", help="Specific inputs to check (default: all)"
+    ),
     json_out: bool = typer.Option(False, "--json", help="Output results as JSON"),
-    verbose: bool = typer.Option(False, "--verbose", help="Show detailed per‑input information"),
-    parallel: int = typer.Option(4, "--parallel", help="Number of parallel workers (default=4)", min=0),
-    method: str = typer.Option("auto", "--method", help="Commit search method: github, pygit2, subprocess, or auto"),
+    verbose: bool = typer.Option(
+        False, "--verbose", help="Show detailed per‑input information"
+    ),
+    parallel: int = typer.Option(
+        4, "--parallel", help="Number of parallel workers (default=4)", min=0
+    ),
+    method: str = typer.Option(
+        "auto",
+        "--method",
+        help="Commit search method: github, pygit2, subprocess, or auto",
+    ),
 ):
     """Validate that each flake input is at least ``min_age`` days old.
 
@@ -147,13 +159,20 @@ def verify(
         typer.echo(json.dumps(results, indent=2))
     else:
         from ..output.formatters import format_results
+
         output = format_results(results, verbose=verbose)
         typer.echo(output)
         if failures:
-            typer.secho(f"\n{len(failures)} input(s) too new: {', '.join(failures)}", fg=typer.colors.RED)
+            typer.secho(
+                f"\n{len(failures)} input(s) too new: {', '.join(failures)}",
+                fg=typer.colors.RED,
+            )
             raise typer.Exit(code=1)
         else:
-            typer.secho("All inputs satisfy the minimum age requirement.", fg=typer.colors.GREEN)
+            typer.secho(
+                "All inputs satisfy the minimum age requirement.", fg=typer.colors.GREEN
+            )
+
 
 if __name__ == "__main__":
     app()

@@ -13,6 +13,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from flake_age_filter.core.models import FlakeInput
 
+
 class TestFlakeInput(unittest.TestCase):
     def test_to_git_url_http(self):
         inp = FlakeInput(
@@ -58,6 +59,7 @@ class TestFlakeInput(unittest.TestCase):
             inp.to_flake_url("1234567"),
             "example=github:user/repo/1234567",
         )
+
 
 if __name__ == "__main__":
     unittest.main()

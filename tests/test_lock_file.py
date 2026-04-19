@@ -12,6 +12,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from flake_age_filter.core.lock_file import read_flake_inputs
 
+
 class TestLockFileParsing(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
@@ -53,6 +54,7 @@ class TestLockFileParsing(unittest.TestCase):
         example = next(i for i in inputs if i.name == "example")
         self.assertEqual(example.rev, "deadbeef")
         self.assertTrue(example.has_rev)
+
 
 if __name__ == "__main__":
     unittest.main()

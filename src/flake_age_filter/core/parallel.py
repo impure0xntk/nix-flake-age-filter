@@ -32,9 +32,7 @@ def execute_parallel(
         return results
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_inp = {
-            executor.submit(processor, inp): inp for inp in inputs
-        }
+        future_to_inp = {executor.submit(processor, inp): inp for inp in inputs}
         results = []
         for future in concurrent.futures.as_completed(future_to_inp):
             inp = future_to_inp[future]

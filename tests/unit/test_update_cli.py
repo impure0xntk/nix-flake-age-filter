@@ -16,6 +16,7 @@ import pytest
 from flake_age_filter.cli.update import _choose_rev, app
 from flake_age_filter.core.models import FlakeInput
 
+
 # Helper to create a FlakeInput instance with minimal required fields.
 def make_input(
     name: str,
@@ -37,20 +38,25 @@ def make_input(
         original = {}
     return FlakeInput(name=name, locked=locked, original=original)
 
+
 @pytest.fixture
 def mock_git_ops():
     with (
         mock.patch("flake_age_filter.core.git_ops.resolve_default_ref") as m_resolve,
         mock.patch("flake_age_filter.core.git_ops.get_commit_timestamp") as m_ts,
-        mock.patch("flake_age_filter.core.git_ops.find_oldest_commit_meeting_age") as m_find,
+        mock.patch(
+            "flake_age_filter.core.git_ops.find_oldest_commit_meeting_age"
+        ) as m_find,
     ):
         yield m_resolve, m_ts, m_find
+
 
 def test_choose_rev_returns_none_for_path_input(mock_git_ops):
     # Path inputs have no URL – should be skipped.
     inp = make_input(name="local", input_type="path")
     res = _choose_rev(inp, min_age=30, timeout=10)
     assert res is None
+
 
 def test_choose_rev_uses_start_rev_when_age_ok(mock_git_ops):
     m_resolve, m_ts, m_find = mock_git_ops
@@ -62,6 +68,7 @@ def test_choose_rev_uses_start_rev_when_age_ok(mock_git_ops):
     res = _choose_rev(inp, min_age=30, timeout=10, now_ts=1_700_000_000)
     assert res == {"ok": True, "rev": "abcd1234", "timestamp": old_ts}
     m_find.assert_not_called()
+
 
 def test_choose_rev_falls_back_to_find_when_newer(mock_git_ops):
     m_resolve, m_ts, m_find = mock_git_ops
@@ -77,9 +84,11 @@ def test_choose_rev_falls_back_to_find_when_newer(mock_git_ops):
     assert res == {"ok": True, "rev": "olderrev", "timestamp": 1_600_000_000}
     m_find.assert_called_once()
 
+
 def test_cli_skips_path_inputs_and_outputs_overrides(mock_git_ops):
     """Test that the CLI correctly skips path inputs and generates overrides for git inputs."""
     from typer.testing import CliRunner
+
     runner = CliRunner()
     m_resolve, m_ts, m_find = mock_git_ops
     m_resolve.return_value = "main"
@@ -99,9 +108,7 @@ def test_cli_skips_path_inputs_and_outputs_overrides(mock_git_ops):
                     "rev": "abcd",
                 }
             },
-            "path-input": {
-                "locked": {"type": "path", "path": "/tmp/local"}
-            },
+            "path-input": {"locked": {"type": "path", "path": "/tmp/local"}},
         }
     }
     tmp = Path(tempfile.mkdtemp()) / "flake.lock"
@@ -111,7 +118,9 @@ def test_cli_skips_path_inputs_and_outputs_overrides(mock_git_ops):
     # NOTE: The app's default command is update, so no "update" subcommand needed.
     result = runner.invoke(app, ["--min-age", "30", str(tmp), "--dry-run"])
     # Exit code should be 0 (dry‑run always succeeds).
-    assert result.exit_code == 0, f"Expected exit code 0, got {result.exit_code}. stdout: {result.stdout}"
+    assert result.exit_code == 0, (
+        f"Expected exit code 0, got {result.exit_code}. stdout: {result.stdout}"
+    )
     out = result.stdout
     # Only the git input should appear in the override list (not path-input).
     assert "git-input=" in out, f"Expected 'git-input=' in output: {out}"

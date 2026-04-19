@@ -66,7 +66,7 @@ class FlakeInput:
             url = self.locked.get("url") or self.original.get("url")
             if url and url.startswith("git@"):
                 # Ensure it ends with .git for consistency.
-                return url if url.endswith('.git') else f"{url}.git"
+                return url if url.endswith(".git") else f"{url}.git"
             # Fallback to the canonical HTTPS form.
             return f"https://github.com/{self.locked.get('owner', '')}/{self.locked.get('repo', '')}.git"
         if t == "gitlab":

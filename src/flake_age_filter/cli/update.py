@@ -6,10 +6,7 @@ uses the new core modules and Typer for a clean sub‑command interface.
 
 from __future__ import annotations
 
-import concurrent.futures
 import json
-import subprocess
-import sys
 from pathlib import Path
 from typing import List, Dict
 
@@ -18,11 +15,13 @@ import typer
 from ..core.lock_file import read_flake_inputs
 from ..core import git_ops
 
-from ..core.age_check import check_age
 from ..core.models import FlakeInput
 from ..core.errors import FlakeAgeError
 
-app = typer.Typer(help="Update flake inputs, ensuring each commit is at least a given age.")
+app = typer.Typer(
+    help="Update flake inputs, ensuring each commit is at least a given age."
+)
+
 
 def _choose_rev(
     inp: FlakeInput,
@@ -85,17 +84,32 @@ def _choose_rev(
     # Otherwise, return the found commit.
     return {"ok": True, "rev": find_res["rev"], "timestamp": find_res["timestamp"]}
 
+
 @app.command()
 def update(
     min_age: int = typer.Option(..., "--min-age", help="Minimum commit age in days"),
     flake_lock: Path = typer.Argument(..., help="Path to flake.lock"),
-    timeout: int = typer.Option(120, "--timeout", help="Network/git timeout in seconds"),
-    inputs: List[str] = typer.Option(None, "--inputs", help="Specific inputs to update (default: all)"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Print overrides without running nix"),
+    timeout: int = typer.Option(
+        120, "--timeout", help="Network/git timeout in seconds"
+    ),
+    inputs: List[str] = typer.Option(
+        None, "--inputs", help="Specific inputs to update (default: all)"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Print overrides without running nix"
+    ),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON result"),
-    verbose: bool = typer.Option(False, "--verbose", help="Show detailed per‑input info"),
-    parallel: int = typer.Option(4, "--parallel", help="Number of parallel workers (default=4)", min=0),
-    method: str = typer.Option("auto", "--method", help="Commit search method: github, pygit2, subprocess, or auto"),
+    verbose: bool = typer.Option(
+        False, "--verbose", help="Show detailed per‑input info"
+    ),
+    parallel: int = typer.Option(
+        4, "--parallel", help="Number of parallel workers (default=4)", min=0
+    ),
+    method: str = typer.Option(
+        "auto",
+        "--method",
+        help="Commit search method: github, pygit2, subprocess, or auto",
+    ),
 ):
     """Update flake inputs that are older than ``min_age`` days.
 
@@ -117,8 +131,6 @@ def update(
     overrides: List[str] = []
     failures: List[str] = []
 
-
-
     from ..core.parallel import execute_parallel
 
     def _process_update_inp(inp: FlakeInput) -> dict | None:
@@ -128,15 +140,19 @@ def update(
     for inp, res in processed:
         if res is None:
             continue
-        typer.echo(f"DEBUG update: inp.name={inp.name}, res={res}, type={type(res)}", err=True)
         if not isinstance(res, dict):
-            typer.echo(f"DEBUG update: Expected dict, got {type(res)} for {inp.name}", err=True)
             failures.append(inp.name)
-            results.append({"input": inp.name, "ok": False, "error": f"Unexpected result type: {type(res)}"})
+            results.append(
+                {
+                    "input": inp.name,
+                    "ok": False,
+                    "error": f"Unexpected result type: {type(res)}",
+                }
+            )
             continue
         results.append({"input": inp.name, **res})
         if res.get("ok"):
-            overrides.append(inp.to_flake_url(res['rev']))
+            overrides.append(inp.to_flake_url(res["rev"]))
         else:
             failures.append(inp.name)
 
@@ -185,11 +201,14 @@ def update(
         cmd.extend(["--override-input", name, url])
     typer.secho(f"Running: {' '.join(cmd)}", fg=typer.colors.BLUE)
     # Use a longer timeout for nix flake update (default 60s may be too short)
-    rc, out, err = git_ops.run_cmd(cmd, env_overrides=git_ops.git_env_no_prompt(), timeout=timeout * 2)
+    rc, out, err = git_ops.run_cmd(
+        cmd, env_overrides=git_ops.git_env_no_prompt(), timeout=timeout * 2
+    )
     if rc != 0:
         typer.echo(err or out, err=True)
         raise typer.Exit(code=rc if rc > 0 else 1)
     typer.echo(out)
+
 
 if __name__ == "__main__":
     app()

@@ -8,7 +8,7 @@ and convenient arithmetic.
 from __future__ import annotations
 
 from typing import Union
-from whenever import Instant, TimeDelta
+from whenever import Instant
 
 
 def _to_instant(val: Union[int, Instant]) -> Instant:
@@ -16,7 +16,9 @@ def _to_instant(val: Union[int, Instant]) -> Instant:
     return val if isinstance(val, Instant) else Instant.from_timestamp(val)
 
 
-def check_age(commit: Union[int, Instant], now: Union[int, Instant], min_days: int) -> dict:
+def check_age(
+    commit: Union[int, Instant], now: Union[int, Instant], min_days: int
+) -> dict:
     """Return a dict describing whether ``commit`` satisfies ``min_days``.
 
     Args:
@@ -31,7 +33,7 @@ def check_age(commit: Union[int, Instant], now: Union[int, Instant], min_days: i
     now_instant = _to_instant(now)
 
     delta = now_instant - commit_time
-    age_seconds = delta.total('seconds')
+    age_seconds = delta.total("seconds")
     age_days = int(age_seconds // 86_400)
     ok = age_days >= min_days
 

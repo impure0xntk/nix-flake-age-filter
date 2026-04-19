@@ -35,7 +35,9 @@ def mock_git_ops():
     with (
         mock.patch("flake_age_filter.core.git_ops.resolve_default_ref") as m_resolve,
         mock.patch("flake_age_filter.core.git_ops.get_commit_timestamp") as m_ts,
-        mock.patch("flake_age_filter.core.git_ops.find_oldest_commit_meeting_age") as m_find,
+        mock.patch(
+            "flake_age_filter.core.git_ops.find_oldest_commit_meeting_age"
+        ) as m_find,
         mock.patch("time.time") as m_time,
     ):
         yield m_resolve, m_ts, m_find, m_time
@@ -70,8 +72,12 @@ def test_verify_method_github_passed(mock_git_ops):
             )
         )
         # Invoke verify with --method github
-        result = runner.invoke(app, ["--min-age", "30", str(flake_path), "--method", "github"])
-        assert result.exit_code == 0, f"Expected exit code 0, got {result.exit_code}. stdout: {result.stdout}"
+        result = runner.invoke(
+            app, ["--min-age", "30", str(flake_path), "--method", "github"]
+        )
+        assert result.exit_code == 0, (
+            f"Expected exit code 0, got {result.exit_code}. stdout: {result.stdout}"
+        )
         # Ensure find_oldest_commit_meeting_age was called with method='github'
         m_find.assert_called_once()
         called_kwargs = m_find.call_args.kwargs
@@ -104,7 +110,9 @@ def test_verify_method_pygit2_passed(mock_git_ops):
                 }
             )
         )
-        result = runner.invoke(app, ["--min-age", "30", str(flake_path), "--method", "pygit2"])
+        result = runner.invoke(
+            app, ["--min-age", "30", str(flake_path), "--method", "pygit2"]
+        )
         assert result.exit_code == 0
         m_find.assert_called_once()
         called_kwargs = m_find.call_args.kwargs
@@ -137,7 +145,9 @@ def test_verify_method_subprocess_passed(mock_git_ops):
                 }
             )
         )
-        result = runner.invoke(app, ["--min-age", "30", str(flake_path), "--method", "subprocess"])
+        result = runner.invoke(
+            app, ["--min-age", "30", str(flake_path), "--method", "subprocess"]
+        )
         assert result.exit_code == 0
         m_find.assert_called_once()
         called_kwargs = m_find.call_args.kwargs
@@ -171,7 +181,9 @@ def test_verify_method_auto_attempts_github_first(mock_git_ops):
                 }
             )
         )
-        result = runner.invoke(app, ["--min-age", "30", str(flake_path), "--method", "auto"])
+        result = runner.invoke(
+            app, ["--min-age", "30", str(flake_path), "--method", "auto"]
+        )
         assert result.exit_code == 0
         # Should have been called once with method='auto'
         m_find.assert_called_once()
@@ -206,7 +218,9 @@ def test_verify_method_auto_falls_back_to_subprocess(mock_git_ops):
                 }
             )
         )
-        result = runner.invoke(app, ["--min-age", "30", str(flake_path), "--method", "auto"])
+        result = runner.invoke(
+            app, ["--min-age", "30", str(flake_path), "--method", "auto"]
+        )
         assert result.exit_code == 0
         m_find.assert_called_once()
         called_kwargs = m_find.call_args.kwargs

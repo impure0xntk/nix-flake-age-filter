@@ -38,7 +38,7 @@ class TestEndToEndWorkflow(unittest.TestCase):
                         "owner": "user",
                         "repo": "repo",
                         "rev": "deadbeef",
-                        "url": "https://github.com/user/repo"
+                        "url": "https://github.com/user/repo",
                     }
                 },
                 "inputs/another": {
@@ -47,9 +47,9 @@ class TestEndToEndWorkflow(unittest.TestCase):
                         "owner": "other",
                         "repo": "lib",
                         "rev": "c0ffee",
-                        "url": "git@github.com:other/lib"
+                        "url": "git@github.com:other/lib",
                     }
-                }
+                },
             }
         }
         self.lock_path.write_text(json.dumps(lock_content))
@@ -62,7 +62,9 @@ class TestEndToEndWorkflow(unittest.TestCase):
     @patch("flake_age_filter.core.age_check.check_age")
     @patch("flake_age_filter.core.git_ops.resolve_default_ref")
     @patch("flake_age_filter.core.git_ops.find_oldest_commit_meeting_age")
-    def test_verify_and_update_flow(self, mock_find_oldest, mock_resolve_ref, mock_check_age, mock_get_ts):
+    def test_verify_and_update_flow(
+        self, mock_find_oldest, mock_resolve_ref, mock_check_age, mock_get_ts
+    ):
         # Simulate both inputs being old enough (check_age returns dict with ok=True)
         mock_check_age.side_effect = lambda *args, **kwargs: {
             "ok": True,
@@ -70,7 +72,11 @@ class TestEndToEndWorkflow(unittest.TestCase):
             "commit_date": "2024-01-01 00:00 UTC",
             "error": None,
         }
-        mock_get_ts.return_value = {"ok": True, "timestamp": 1_599_000_000, "error": None}  # arbitrary old timestamp
+        mock_get_ts.return_value = {
+            "ok": True,
+            "timestamp": 1_599_000_000,
+            "error": None,
+        }  # arbitrary old timestamp
         mock_resolve_ref.return_value = "main"
         mock_find_oldest.return_value = {
             "ok": True,
@@ -80,8 +86,7 @@ class TestEndToEndWorkflow(unittest.TestCase):
 
         # ---- Verify ----
         result_verify = self.runner.invoke(
-            verify_app,
-            ["--min-age", "10", "--json", str(self.lock_path)]
+            verify_app, ["--min-age", "10", "--json", str(self.lock_path)]
         )
         self.assertEqual(result_verify.exit_code, 0)
         output = json.loads(result_verify.output)
@@ -92,15 +97,19 @@ class TestEndToEndWorkflow(unittest.TestCase):
 
         # ---- Update (dry‑run) ----
         result_update = self.runner.invoke(
-            update_app,
-            ["--min-age", "10", "--dry-run", str(self.lock_path)]
+            update_app, ["--min-age", "10", "--dry-run", str(self.lock_path)]
         )
         print(f"Update exit code: {result_update.exit_code}")
         print(f"Update output: {result_update.output}")
         if result_update.exception:
             print(f"Update exception: {result_update.exception}")
             import traceback
-            traceback.print_exception(type(result_update.exception), result_update.exception, result_update.exception.__traceback__)
+
+            traceback.print_exception(
+                type(result_update.exception),
+                result_update.exception,
+                result_update.exception.__traceback__,
+            )
         self.assertEqual(result_update.exit_code, 0)
         self.assertIn("dry‑run", result_update.output.lower())
         self.assertIn("example=", result_update.output)

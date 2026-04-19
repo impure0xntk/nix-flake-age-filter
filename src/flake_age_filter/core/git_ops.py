@@ -19,11 +19,11 @@ from typing import Any, Dict, Tuple
 import pygit2
 import requests
 
-from .errors import FlakeAgeError
 
 # ---------------------------------------------------------------------------
 # Basic command execution helpers
 # ---------------------------------------------------------------------------
+
 
 def run_cmd(
     args: list[str],
@@ -59,7 +59,9 @@ def run_git(
     env_overrides: dict | None = None,
 ) -> Tuple[int, str, str]:
     """Convenience wrapper that prefixes the command with ``git``."""
-    return run_cmd(["git"] + list(args), cwd=cwd, timeout=timeout, env_overrides=env_overrides)
+    return run_cmd(
+        ["git"] + list(args), cwd=cwd, timeout=timeout, env_overrides=env_overrides
+    )
 
 
 def git_env_no_prompt() -> dict:
@@ -76,9 +78,11 @@ def git_env_no_prompt() -> dict:
         "GIT_CONFIG_VALUE_0": "2",
     }
 
+
 # ---------------------------------------------------------------------------
 # Helper for GitHub URL parsing
 # ---------------------------------------------------------------------------
+
 
 def _parse_github_url(git_url: str) -> Tuple[str, str] | None:
     """Return ``(owner, repo)`` for a ``github.com`` HTTPS URL.
@@ -88,6 +92,7 @@ def _parse_github_url(git_url: str) -> Tuple[str, str] | None:
     """
     m = re.search(r"github\.com[:/]{1}([^/]+)/([^/]+?)(?:\.git)?$", git_url)
     return m.groups() if m else None
+
 
 # ---------------------------------------------------------------------------
 # Commit timestamp retrieval
@@ -120,7 +125,9 @@ def _parse_github_date(date_str: str) -> int | None:
         return None
 
 
-def _github_api_commit_date(owner: str, repo: str, sha: str, timeout: int = 15) -> int | None:
+def _github_api_commit_date(
+    owner: str, repo: str, sha: str, timeout: int = 15
+) -> int | None:
     """Fetch the commit timestamp for a specific SHA via the GitHub REST API.
     Returns ``None`` on failure.
     """
@@ -130,10 +137,9 @@ def _github_api_commit_date(owner: str, repo: str, sha: str, timeout: int = 15) 
         if resp.status_code != 200:
             return None
         data = resp.json()
-        committer = (
-            data.get("commit", {}).get("committer")
-            or data.get("commit", {}).get("author")
-        )
+        committer = data.get("commit", {}).get("committer") or data.get(
+            "commit", {}
+        ).get("author")
         return _parse_github_date(committer.get("date", ""))
     except requests.RequestException:
         return None
@@ -160,7 +166,11 @@ def get_commit_timestamp(git_url: str, rev: str, timeout: int = 120) -> Dict[str
         bare = str(Path(tmpdir) / "bare.git")
         rc, _, err = run_git(["init", "--bare", bare])
         if rc != 0:
-            return {"ok": False, "timestamp": None, "error": f"init: {err.strip()[:120]}"}
+            return {
+                "ok": False,
+                "timestamp": None,
+                "error": f"init: {err.strip()[:120]}",
+            }
 
         env = git_env_no_prompt()
         rc, _, err = run_git(
@@ -169,27 +179,44 @@ def get_commit_timestamp(git_url: str, rev: str, timeout: int = 120) -> Dict[str
             env_overrides=env,
         )
         if rc != 0:
-            return {"ok": False, "timestamp": None, "error": f"fetch {rev[:8]}: {err.strip()[:200]}"}
+            return {
+                "ok": False,
+                "timestamp": None,
+                "error": f"fetch {rev[:8]}: {err.strip()[:200]}",
+            }
 
-        rc, out, err = run_git([
-            "-C",
-            bare,
-            "log",
-            "--format=%at",
-            "-1",
-            "FETCH_HEAD",
-        ], timeout=timeout)
+        rc, out, err = run_git(
+            [
+                "-C",
+                bare,
+                "log",
+                "--format=%at",
+                "-1",
+                "FETCH_HEAD",
+            ],
+            timeout=timeout,
+        )
         if rc != 0:
-            return {"ok": False, "timestamp": None, "error": f"log: {err.strip()[:200]}"}
+            return {
+                "ok": False,
+                "timestamp": None,
+                "error": f"log: {err.strip()[:200]}",
+            }
 
         ts_str = out.strip()
         if ts_str.isdigit():
             return {"ok": True, "timestamp": int(ts_str), "error": None}
-        return {"ok": False, "timestamp": None, "error": f"bad timestamp: {ts_str[:40]}"}
+        return {
+            "ok": False,
+            "timestamp": None,
+            "error": f"bad timestamp: {ts_str[:40]}",
+        }
+
 
 # ---------------------------------------------------------------------------
 # Default ref resolution (branch detection)
 # ---------------------------------------------------------------------------
+
 
 def _get_github_default_branch(owner: str, repo: str, timeout: int = 10) -> str | None:
     """Query the GitHub API for the repository's default branch name."""
@@ -215,13 +242,16 @@ def resolve_default_ref(git_url: str, ref: str | None, timeout: int = 15) -> str
         return ref
 
     # git ls-remote --symref HEAD
-    rc, stdout, _ = run_git([
-        "ls-remote",
-        "--symref",
-        "--exit-code",
-        git_url,
-        "HEAD",
-    ], timeout=timeout)
+    rc, stdout, _ = run_git(
+        [
+            "ls-remote",
+            "--symref",
+            "--exit-code",
+            git_url,
+            "HEAD",
+        ],
+        timeout=timeout,
+    )
     if rc == 0 and stdout.strip():
         for line in stdout.splitlines():
             if line.startswith("ref: refs/heads/"):
@@ -238,9 +268,11 @@ def resolve_default_ref(git_url: str, ref: str | None, timeout: int = 15) -> str
 
     return "HEAD"
 
+
 # ---------------------------------------------------------------------------
 # Finding a commit that satisfies the minimum‑age requirement
 # ---------------------------------------------------------------------------
+
 
 def find_oldest_commit_meeting_age(
     git_url: str,
@@ -249,9 +281,6 @@ def find_oldest_commit_meeting_age(
     min_depth: int = 100,
     max_depth: int = 3000,
     timeout: int = 300,
-    locked_ts: int | None = None,
-    input_name: str = "",
-    original: dict | None = None,
     method: str = "auto",
     now: datetime | None = None,
 ) -> Dict[str, Any]:
@@ -312,7 +341,11 @@ def find_oldest_commit_meeting_age(
 
     if method == "github":
         res = _try_github()
-        return res if res is not None else {"ok": False, "error": "GitHub method requested but not a GitHub URL"}
+        return (
+            res
+            if res is not None
+            else {"ok": False, "error": "GitHub method requested but not a GitHub URL"}
+        )
     if method == "pygit2":
         return _try_pygit2()
     if method == "subprocess":
@@ -331,9 +364,11 @@ def find_oldest_commit_meeting_age(
         return res
     return _try_subprocess()
 
+
 # ---------------------------------------------------------------------------
 # Internal helpers for the GitHub and pygit2 pathways
 # ---------------------------------------------------------------------------
+
 
 def _github_api_find_at_cutoff(
     owner: str,
@@ -355,7 +390,9 @@ def _github_api_find_at_cutoff(
         commit = ts_item.get("commit", {})
         c = commit.get("committer") or commit.get("author") or {}
         ts = _parse_github_date(c.get("date", ""))
-        date_fmt = c.get("date", "").replace("T", " ")[:19] + " UTC" if c.get("date") else ""
+        date_fmt = (
+            c.get("date", "").replace("T", " ")[:19] + " UTC" if c.get("date") else ""
+        )
         return ts, date_fmt
 
     # Build the ISO‑8601 cutoff string expected by the API (one minute earlier
@@ -447,7 +484,14 @@ def _github_api_find_at_cutoff(
     except requests.RequestException:
         pass
 
-    return {"ok": False, "rev": None, "timestamp": None, "depth": 0, "date": "", "error": "GitHub API failed"}
+    return {
+        "ok": False,
+        "rev": None,
+        "timestamp": None,
+        "depth": 0,
+        "date": "",
+        "error": "GitHub API failed",
+    }
 
 
 def _find_via_pygit2(
@@ -524,19 +568,27 @@ def _find_via_pygit2(
             # Try branch first
             try:
                 remote.fetch(
-                    refspec=f"+refs/heads/{ref}:refs/heads/_", depth=1, options=fetch_opts
+                    refspec=f"+refs/heads/{ref}:refs/heads/_",
+                    depth=1,
+                    options=fetch_opts,
                 )
                 fetched = True
             except Exception:
                 # Fallback to tag
                 try:
                     remote.fetch(
-                        refspec=f"+refs/tags/{ref}:refs/tags/{ref}", depth=1, options=fetch_opts
+                        refspec=f"+refs/tags/{ref}:refs/tags/{ref}",
+                        depth=1,
+                        options=fetch_opts,
                     )
                     # Resolve tag to a commit and create a temporary branch ``_``
                     tag_ref = repo.lookup_reference(f"refs/tags/{ref}")
                     tag_obj = repo.get(tag_ref.target)
-                    target_id = tag_obj.target if tag_obj.type == pygit2.GIT_OBJECT_TAG else tag_ref.target
+                    target_id = (
+                        tag_obj.target
+                        if tag_obj.type == pygit2.GIT_OBJECT_TAG
+                        else tag_ref.target
+                    )
                     repo.references.create("refs/heads/_", target_id)
                     fetched = True
                 except Exception:
@@ -569,7 +621,9 @@ def _find_via_pygit2(
             # Walk commits from HEAD backwards
             for commit in repo.walk(head_ref.target, pygit2.GIT_SORT_TIME):
                 if commit.commit_time <= cutoff_ts:
-                    return _make_result(str(commit.id), commit.commit_time, depth=depth_step)
+                    return _make_result(
+                        str(commit.id), commit.commit_time, depth=depth_step
+                    )
 
             depth_step = min(depth_step * 2, 5000)
 
@@ -588,6 +642,7 @@ def _find_via_pygit2(
             pass
 
         return _head_too_new(head_hash, head_ts, depth=0)
+
 
 def _find_via_subprocess(
     git_url: str,
@@ -645,7 +700,9 @@ def _find_via_subprocess(
         remote_name = "origin"
 
         # Add remote
-        rc, _, err = run_git(["remote", "add", remote_name, git_url], cwd=bare, env_overrides=env)
+        rc, _, err = run_git(
+            ["remote", "add", remote_name, git_url], cwd=bare, env_overrides=env
+        )
         if rc != 0:
             return {"ok": False, "error": f"remote add failed: {err}"}
 
@@ -666,8 +723,14 @@ def _find_via_subprocess(
             if rc == 0:
                 return True
             # If branch failed, try tag
-            args = ["fetch", "--depth", str(depth), "--no-tags", remote_name,
-                    f"refs/tags/{ref}"]
+            args = [
+                "fetch",
+                "--depth",
+                str(depth),
+                "--no-tags",
+                remote_name,
+                f"refs/tags/{ref}",
+            ]
             rc, _, err = run_git(args, cwd=bare, env_overrides=env, timeout=timeout)
             return rc == 0
 
@@ -716,18 +779,3 @@ def _find_via_subprocess(
             return {"ok": False, "error": f"non-numeric timestamp: {ts_str}"}
         ts = int(ts_str)
         return _head_too_new(commit_hash, ts, depth=depth)
-
-
-# ---------------------------------------------------------------------------
-# Compatibility shim – original ``check_age`` function used ``datetime`` directly.
-# ---------------------------------------------------------------------------
-def check_age(timestamp: int, min_age_days: int, now: datetime) -> dict:
-    """Legacy wrapper kept for backward compatibility.
-
-    New code should import ``age_check.check_age`` from this module which in
-    turn uses the ``whenever`` based implementation.  This wrapper simply
-    delegates to that implementation.
-    """
-    from .age_check import check_age as _new_check
-
-    return _new_check(timestamp, min_age_days, now)
