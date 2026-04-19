@@ -49,7 +49,7 @@ def mock_git_ops():
 def test_choose_rev_returns_none_for_path_input(mock_git_ops):
     # Path inputs have no URL – should be skipped.
     inp = make_input(name="local", input_type="path")
-    res = _choose_rev(inp, min_age=30, now_ts=1_700_000_000, timeout=10)
+    res = _choose_rev(inp, min_age=30, timeout=10)
     assert res is None
 
 def test_choose_rev_uses_start_rev_when_age_ok(mock_git_ops):
@@ -59,7 +59,7 @@ def test_choose_rev_uses_start_rev_when_age_ok(mock_git_ops):
     old_ts = 1_600_000_000
     m_ts.return_value = {"ok": True, "timestamp": old_ts}
     inp = make_input(name="foo", url="git+https://example.com/repo.git", rev="abcd1234")
-    res = _choose_rev(inp, min_age=30, now_ts=1_700_000_000, timeout=10)
+    res = _choose_rev(inp, min_age=30, timeout=10, now_ts=1_700_000_000)
     assert res == {"ok": True, "rev": "abcd1234", "timestamp": old_ts}
     m_find.assert_not_called()
 
@@ -73,7 +73,7 @@ def test_choose_rev_falls_back_to_find_when_newer(mock_git_ops):
     # Mock find to return an older commit.
     m_find.return_value = {"ok": True, "rev": "olderrev", "timestamp": 1_600_000_000}
     inp = make_input(name="foo", url="git+https://example.com/repo.git", rev="newrev")
-    res = _choose_rev(inp, min_age=30, now_ts=1_700_000_000, timeout=10)
+    res = _choose_rev(inp, min_age=30, timeout=10, now_ts=1_700_000_000)
     assert res == {"ok": True, "rev": "olderrev", "timestamp": 1_600_000_000}
     m_find.assert_called_once()
 

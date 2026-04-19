@@ -253,6 +253,7 @@ def find_oldest_commit_meeting_age(
     input_name: str = "",
     original: dict | None = None,
     method: str = "auto",
+    now: datetime | None = None,
 ) -> Dict[str, Any]:
     """Return information about the newest commit that is at least ``min_age_days`` old.
 
@@ -272,7 +273,8 @@ def find_oldest_commit_meeting_age(
       - "subprocess": only try the subprocess git implementation
       - "auto": try GitHub (if applicable), then pygit2, then subprocess
     """
-    now = datetime.now(tz=timezone.utc)
+    if now is None:
+        now = datetime.now(tz=timezone.utc)
     cutoff_ts = int(now.timestamp()) - min_age_days * 86_400
 
     # Resolve the ref (branch/tag) to use for the remote query.

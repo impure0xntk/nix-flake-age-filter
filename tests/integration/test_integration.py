@@ -60,7 +60,9 @@ class TestEndToEndWorkflow(unittest.TestCase):
 
     @patch("flake_age_filter.core.git_ops.get_commit_timestamp")
     @patch("flake_age_filter.core.age_check.check_age")
-    def test_verify_and_update_flow(self, mock_check_age, mock_get_ts):
+    @patch("flake_age_filter.core.git_ops.resolve_default_ref")
+    @patch("flake_age_filter.core.git_ops.find_oldest_commit_meeting_age")
+    def test_verify_and_update_flow(self, mock_find_oldest, mock_resolve_ref, mock_check_age, mock_get_ts):
         # Simulate both inputs being old enough (check_age returns dict with ok=True)
         mock_check_age.side_effect = lambda *args, **kwargs: {
             "ok": True,
@@ -68,7 +70,13 @@ class TestEndToEndWorkflow(unittest.TestCase):
             "commit_date": "2024-01-01 00:00 UTC",
             "error": None,
         }
-        mock_get_ts.return_value = 1_599_000_000  # arbitrary old timestamp
+        mock_get_ts.return_value = {"ok": True, "timestamp": 1_599_000_000, "error": None}  # arbitrary old timestamp
+        mock_resolve_ref.return_value = "main"
+        mock_find_oldest.return_value = {
+            "ok": True,
+            "rev": "abc123",
+            "timestamp": 1_600_000_000,
+        }
 
         # ---- Verify ----
         result_verify = self.runner.invoke(
@@ -87,6 +95,12 @@ class TestEndToEndWorkflow(unittest.TestCase):
             update_app,
             ["--min-age", "10", "--dry-run", str(self.lock_path)]
         )
+        print(f"Update exit code: {result_update.exit_code}")
+        print(f"Update output: {result_update.output}")
+        if result_update.exception:
+            print(f"Update exception: {result_update.exception}")
+            import traceback
+            traceback.print_exception(type(result_update.exception), result_update.exception, result_update.exception.__traceback__)
         self.assertEqual(result_update.exit_code, 0)
         self.assertIn("dry‑run", result_update.output.lower())
         self.assertIn("example=", result_update.output)

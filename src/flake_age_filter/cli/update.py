@@ -24,54 +24,66 @@ from ..core.errors import FlakeAgeError
 
 app = typer.Typer(help="Update flake inputs, ensuring each commit is at least a given age.")
 
-def _choose_rev(inp: FlakeInput, min_age: int, now_ts: int, timeout: int, method: str = "auto") -> Dict[str, object] | None:
+def _choose_rev(
+    inp: FlakeInput,
+    min_age: int,
+    timeout: int,
+    method: str = "auto",
+    now_ts: int | None = None,
+) -> Dict[str, object] | None:
     """Return a dict with a suitable rev (or error) for *inp*.
 
-    The function first resolves the remote reference, then attempts to fetch the
-    commit timestamp for the locked revision (or the default branch).  If the
-    commit is newer than ``min_age`` the function searches for an older commit
-    using ``core.git_ops.find_oldest_commit_meeting_age`` (which internally
-    prefers the GitHub API).  The returned dict mimics the legacy script's
-    output structure.
-
+    First checks if the locked revision (if present) is old enough.
+    If so, returns that revision.
+    Otherwise, searches for the newest commit that is at least min_age days old.
     Returns ``None`` for non‑git inputs (e.g. ``path`` type) which are skipped
-    from the age check.
+    from the age check, and for git inputs when the newest suitable commit
+    matches the currently locked revision (indicating no update is needed).
     """
+    from datetime import datetime, timezone
+
     git_url = inp.to_git_url()
     if not git_url:
         # Skip path inputs – they are local and have no remote git history.
         return None
 
-    # Resolve the effective reference (branch/tag or remote default).
-    effective_ref = git_ops.resolve_default_ref(git_url, inp.ref, timeout)
-    start_rev = inp.rev or effective_ref
+    # Determine current time for cutoff calculation.
+    if now_ts is None:
+        now_ts = int(datetime.now(tz=timezone.utc).timestamp())
+    cutoff_ts = now_ts - min_age * 86_400
+    now_dt = datetime.fromtimestamp(now_ts, tz=timezone.utc)
 
-    # Try the starting revision first.
-    ts_res = git_ops.get_commit_timestamp(git_url, start_rev, timeout)
-    # Accept both dict and raw int responses.
-    if isinstance(ts_res, dict):
-        if not ts_res.get("ok"):
-            return {"ok": False, "error": ts_res.get("error", "failed to fetch timestamp")}
-        ts = ts_res["timestamp"]
-    else:
-        ts = ts_res
-    age_res = check_age(ts, now_ts, min_age)
-    if age_res.get("ok"):
-        # The current commit is old enough -> use it.
-        return {"ok": True, "rev": start_rev, "timestamp": ts}
-    # Otherwise, too new -> look for an older commit that meets the age requirement.
+    # First, check if the locked revision (if present) is old enough.
+    if inp.rev:
+        locked_res = git_ops.get_commit_timestamp(git_url, inp.rev, timeout)
+        if locked_res.get("ok"):
+            locked_ts = locked_res["timestamp"]
+            if locked_ts <= cutoff_ts:
+                result = {"ok": True, "rev": inp.rev, "timestamp": locked_ts}
+                return result
+
+    # Then, search for the newest commit that is at least min_age days old.
     find_res = git_ops.find_oldest_commit_meeting_age(
         git_url=git_url,
-        ref=effective_ref,
+        ref=inp.ref,
         min_age_days=min_age,
         timeout=timeout,
-        locked_ts=inp.rev and ts,
+        locked_ts=None,
         input_name=inp.name,
         original=inp.original,
+        method=method,
+        now=now_dt,
     )
-    if find_res.get("ok"):
-        return {"ok": True, "rev": find_res["rev"], "timestamp": find_res["timestamp"]}
-    return {"ok": False, "error": find_res.get("error", "no suitable commit found")}
+    if not find_res.get("ok"):
+        # Propagate error.
+        return find_res
+
+    # If we have a locked revision and it matches the found rev, no update needed.
+    if inp.rev and find_res["rev"] == inp.rev:
+        return None
+
+    # Otherwise, return the found commit.
+    return {"ok": True, "rev": find_res["rev"], "timestamp": find_res["timestamp"]}
 
 @app.command()
 def update(
@@ -97,6 +109,10 @@ def update(
         typer.echo(f"Error reading flake.lock: {exc}", err=True)
         raise typer.Exit(code=1)
 
+    # DEBUG: Print the inputs we read
+    typer.echo(f"DEBUG: Read {len(inputs_all)} inputs: {[inp.name for inp in inputs_all]}", err=True)
+    typer.echo(f"DEBUG: dry_run={dry_run}", err=True)
+
     if inputs:
         inputs_all = [i for i in inputs_all if i.name in inputs]
 
@@ -110,10 +126,18 @@ def update(
     from ..core.parallel import execute_parallel
 
     def _process_update_inp(inp: FlakeInput) -> dict | None:
-        return _choose_rev(inp, min_age, now_ts, timeout, method=method)
+        return _choose_rev(inp, min_age, timeout, method=method, now_ts=now_ts)
 
     processed = execute_parallel(inputs_all, _process_update_inp, parallel)
     for inp, res in processed:
+        if res is None:
+            continue
+        typer.echo(f"DEBUG update: inp.name={inp.name}, res={res}, type={type(res)}", err=True)
+        if not isinstance(res, dict):
+            typer.echo(f"DEBUG update: Expected dict, got {type(res)} for {inp.name}", err=True)
+            failures.append(inp.name)
+            results.append({"input": inp.name, "ok": False, "error": f"Unexpected result type: {type(res)}"})
+            continue
         results.append({"input": inp.name, **res})
         if res.get("ok"):
             overrides.append(inp.to_flake_url(res['rev']))
