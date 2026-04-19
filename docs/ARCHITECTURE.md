@@ -19,8 +19,6 @@ src/
     │   └── parallel.py       # Parallel execution utilities
     ├── output/               # Output formatting (JSON, table, etc.)
     │   └ __init__.py
-    └── standalone/           # Standalone scripts (no external deps)
-        └── update.py         # Minimal update script using only stdlib
 ```
 
 ## Data Flow

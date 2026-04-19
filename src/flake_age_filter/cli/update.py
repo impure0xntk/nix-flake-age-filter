@@ -109,10 +109,6 @@ def update(
         typer.echo(f"Error reading flake.lock: {exc}", err=True)
         raise typer.Exit(code=1)
 
-    # DEBUG: Print the inputs we read
-    typer.echo(f"DEBUG: Read {len(inputs_all)} inputs: {[inp.name for inp in inputs_all]}", err=True)
-    typer.echo(f"DEBUG: dry_run={dry_run}", err=True)
-
     if inputs:
         inputs_all = [i for i in inputs_all if i.name in inputs]
 

@@ -14,7 +14,6 @@ A lightweight CLI tool that enforces a **minimum commit age** on Nix flake input
 - **Update** inputs while skipping those newer than the threshold.
 - Pure‑Python core with full type hints; optional `rich` for pretty tables.
 - Typer‑based CLI with sub‑commands `verify` and `update`.
-- Stand‑alone script (`standalone/update.py`) that only requires the standard library.
 - Comprehensive unit‑test suite (`tests/`).
 
 ## Installation
