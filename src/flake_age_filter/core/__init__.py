@@ -1,12 +1,72 @@
-"""Core utilities for the *nix‑flake‑age‑filter* project.
+"""Core module for nix-flake-age-filter.
 
-The subpackage provides:
-
-* **models** – immutable dataclasses representing flake inputs.
-* **age_check** – helpers that use the ``whenever`` library to compute commit
-  age and format durations.
-* **git_ops** – wrappers around ``git`` (and optional ``pygit2``) for fetching
-  timestamps and resolving refs.
-* **lock_file** – parsing of ``flake.lock`` and extraction of root inputs.
-* **errors** – a small hierarchy of domain‑specific exceptions.
+This module provides:
+- GitBackend abstract base class and implementations
+- Git operation facade (git_ops)
+- Flake lock file parsing (lock_file)
+- Data models (models)
+- Age checking utilities (age_check)
+- Error handling (errors)
 """
+
+from __future__ import annotations
+
+# Import exceptions from git_ops for backward compatibility
+from .git_ops import (
+    GitOperationBase,
+    GitOperationError,
+    GitNotFound,
+    GitConfigError,
+    FetchError,
+    ResolveRefError,
+    set_backend,
+    get_current_backend,
+)
+
+# Import backend system
+from .backends import (
+    GitBackend,
+    GitBackendError,
+    GitNotFoundError as BackendGitNotFoundError,
+    FetchError as BackendFetchError,
+    ResolveRefError as BackendResolveRefError,
+    RateLimitError,
+    CommitInfo,
+    RefInfo,
+    register_backend,
+    get_backend,
+    list_backends,
+    get_auto_backend,
+    SubprocessGitBackend,
+    Pygit2Backend,
+    GitHubAPIBackend,
+)
+
+__all__ = [
+    # Legacy API (from git_ops)
+    "GitOperationBase",
+    "GitOperationError",
+    "GitNotFound",
+    "GitConfigError",
+    "FetchError",
+    "ResolveRefError",
+    "set_backend",
+    "get_current_backend",
+    # New backend system
+    "GitBackend",
+    "GitBackendError",
+    "BackendGitNotFoundError",
+    "BackendFetchError",
+    "BackendResolveRefError",
+    "RateLimitError",
+    "CommitInfo",
+    "RefInfo",
+    "register_backend",
+    "get_backend",
+    "list_backends",
+    "get_auto_backend",
+    # Backend classes
+    "SubprocessGitBackend",
+    "Pygit2Backend",
+    "GitHubAPIBackend",
+]

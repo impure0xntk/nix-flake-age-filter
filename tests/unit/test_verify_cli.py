@@ -33,10 +33,10 @@ def make_input(
 @pytest.fixture
 def mock_git_ops():
     with (
-        mock.patch("flake_age_filter.core.git_ops.resolve_default_ref") as m_resolve,
-        mock.patch("flake_age_filter.core.git_ops.get_commit_timestamp") as m_ts,
+        mock.patch("flake_age_filter.cli.verify.resolve_default_ref") as m_resolve,
+        mock.patch("flake_age_filter.cli.verify.git_ops.get_commit_timestamp") as m_ts,
         mock.patch(
-            "flake_age_filter.core.git_ops.find_oldest_commit_meeting_age"
+            "flake_age_filter.cli.verify.git_ops.find_oldest_commit_meeting_age"
         ) as m_find,
         mock.patch("time.time") as m_time,
     ):

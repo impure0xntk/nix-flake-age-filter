@@ -13,10 +13,28 @@ from typing import List, Dict
 import typer
 
 from ..core.lock_file import read_flake_inputs
-from ..core import git_ops
+from ..core import git_ops, list_backends
 
 from ..core.models import FlakeInput
 from ..core.errors import FlakeAgeError
+
+
+# Helper functions for subprocess operations
+def run_cmd(cmd: list, env_overrides: dict | None = None, timeout: int = 120):
+    """Run a command and return (returncode, stdout, stderr)."""
+    import subprocess
+    import os
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    if env_overrides:
+        env.update(env_overrides)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
+    return result.returncode, result.stdout, result.stderr
+
+
+def git_env_no_prompt():
+    """Return environment variables to disable git prompts."""
+    return {"GIT_TERMINAL_PROMPT": "0"}
 
 app = typer.Typer(
     help="Update flake inputs, ensuring each commit is at least a given age."
@@ -108,7 +126,7 @@ def update(
     method: str = typer.Option(
         "auto",
         "--method",
-        help="Commit search method: github, pygit2, subprocess, or auto",
+        help=f"Commit search method: {', '.join(list_backends())}, or auto",
     ),
 ):
     """Update flake inputs that are older than ``min_age`` days.
@@ -201,8 +219,8 @@ def update(
         cmd.extend(["--override-input", name, url])
     typer.secho(f"Running: {' '.join(cmd)}", fg=typer.colors.BLUE)
     # Use a longer timeout for nix flake update (default 60s may be too short)
-    rc, out, err = git_ops.run_cmd(
-        cmd, env_overrides=git_ops.git_env_no_prompt(), timeout=timeout * 2
+    rc, out, err = run_cmd(
+        cmd, env_overrides=git_env_no_prompt(), timeout=timeout * 2
     )
     if rc != 0:
         typer.echo(err or out, err=True)

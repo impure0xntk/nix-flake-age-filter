@@ -11,7 +11,7 @@ import unittest
 import shutil
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from typer.testing import CliRunner
 
 # Add the project src directory to PYTHONPATH
@@ -32,6 +32,12 @@ class TestEndToEndWorkflow(unittest.TestCase):
         self.lock_path = self.tmp_dir / "flake.lock"
         lock_content = {
             "nodes": {
+                "root": {
+                    "inputs": {
+                        "example": "inputs/example",
+                        "another": "inputs/another"
+                    }
+                },
                 "inputs/example": {
                     "locked": {
                         "type": "github",
@@ -58,9 +64,13 @@ class TestEndToEndWorkflow(unittest.TestCase):
         # Clean up temporary directory
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
+    # Patch at the usage site, not the definition site.
+    # verify.py does `from ..core.git_ops import resolve_default_ref` and
+    # `from ..core.age_check import check_age` — direct imports create local
+    # references that are unaffected by patching the original module.
     @patch("flake_age_filter.core.git_ops.get_commit_timestamp")
-    @patch("flake_age_filter.core.age_check.check_age")
-    @patch("flake_age_filter.core.git_ops.resolve_default_ref")
+    @patch("flake_age_filter.cli.verify.check_age")
+    @patch("flake_age_filter.cli.verify.resolve_default_ref")
     @patch("flake_age_filter.core.git_ops.find_oldest_commit_meeting_age")
     def test_verify_and_update_flow(
         self, mock_find_oldest, mock_resolve_ref, mock_check_age, mock_get_ts
@@ -88,6 +98,17 @@ class TestEndToEndWorkflow(unittest.TestCase):
         result_verify = self.runner.invoke(
             verify_app, ["--min-age", "10", "--json", str(self.lock_path)]
         )
+        if result_verify.exit_code != 0:
+            print(f"Verify exit code: {result_verify.exit_code}")
+            print(f"Verify output: {result_verify.output}")
+            if result_verify.exception:
+                print(f"Verify exception: {result_verify.exception}")
+                import traceback
+                traceback.print_exception(
+                    type(result_verify.exception),
+                    result_verify.exception,
+                    result_verify.exception.__traceback__,
+                )
         self.assertEqual(result_verify.exit_code, 0)
         output = json.loads(result_verify.output)
         self.assertIsInstance(output, list)

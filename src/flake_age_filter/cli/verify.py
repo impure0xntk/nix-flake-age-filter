@@ -13,12 +13,10 @@ from typing import Dict, List
 
 import typer
 
-from ..core import git_ops
+from ..core import git_ops, get_backend, list_backends
 from ..core.age_check import check_age, format_duration
 from ..core.errors import FlakeAgeError
-from ..core.git_ops import (
-    resolve_default_ref,
-)
+from ..core.git_ops import resolve_default_ref, set_backend
 from ..core.lock_file import read_flake_inputs
 from ..core.models import FlakeInput
 
@@ -122,7 +120,7 @@ def verify(
     method: str = typer.Option(
         "auto",
         "--method",
-        help="Commit search method: github, pygit2, subprocess, or auto",
+        help=f"Commit search method: {', '.join(list_backends())}, or auto",
     ),
 ):
     """Validate that each flake input is at least ``min_age`` days old.
