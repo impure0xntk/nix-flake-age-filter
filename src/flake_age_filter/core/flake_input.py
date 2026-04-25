@@ -34,7 +34,10 @@ class FlakeInput:
         return int(ts) if ts is not None else None
 
     def to_git_url(self) -> str | None:
-        """Construct a git HTTPS URL."""
+        """Construct a git HTTPS URL.
+
+        Returns None for non-git inputs (path, default) and for local file URLs.
+        """
         t = self.input_type
         if t == "github":
             return (
@@ -55,15 +58,24 @@ class FlakeInput:
             repo = self.locked.get("repo", self.locked.get("project", ""))
             return f"https://git.sr.ht/~{owner}/{repo}"
         if t == "git":
-            return self.locked.get("url") or self.original.get("url")
+            url = self.locked.get("url") or self.original.get("url")
+            # Skip local file URLs (file: scheme) — they have no remote git history.
+            if url and url.startswith("file:"):
+                return None
+            return url
         if t == "indirect":
             oref = self.original.get("id", "")
             if "/" in oref:
                 parts = oref.split("/")
                 return f"https://github.com/{parts[0]}/{'/'.join(parts[1:])}.git"
             return None
-        # path and default inputs are skipped
+        # path, default, and other non-git inputs are skipped
         return None
+
+    @property
+    def is_path(self) -> bool:
+        """Return True if this input is a local path reference."""
+        return self.input_type == "path"
 
     def target_ref(self) -> str | None:
         """Return the ref (branch/tag) that update will pull."""
