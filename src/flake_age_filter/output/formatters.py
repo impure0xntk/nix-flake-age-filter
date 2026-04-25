@@ -7,14 +7,14 @@ following keys (a superset of the original script's output):
 * ``ok`` – boolean indicating whether the age requirement was satisfied
 * ``rev`` – the commit SHA (or the chosen rev for ``update``)
 * ``timestamp`` – Unix epoch of the commit
-* ``age_days`` – integer age in days (when ``ok`` is ``True``)
+* ``age_days`` – integer age in days
+* ``deviation`` – integer deviation from min-age (positive = over, negative = under)
 * ``error`` – optional error message when ``ok`` is ``False``
-* ``duration`` – human‑readable string produced by ``core.age_check.format_duration``
 
 These helpers provide two output modes:
 
 * **Rich table** – when the ``rich`` library is available.  The table includes
-  colour‑coded status, age, and error columns.
+  colour‑coded status, age, deviation, and error columns.
 * **Plain text** – fallback when ``rich`` cannot be imported; a simple aligned
   column layout is used.
 """
@@ -63,9 +63,10 @@ def format_results(
         extra_cols.append("Rev")
     if any(r.get("age_days") is not None for r in results):
         extra_cols.append("Age (d)")
-    if any(r.get("duration") for r in results):
-        extra_cols.append("Duration")
-    if verbose:
+    if any(r.get("deviation") is not None for r in results):
+        extra_cols.append("Deviation")
+    # Always show Error column when there are failures or verbose is set.
+    if verbose or any(not r.get("ok") for r in results):
         extra_cols.append("Error")
 
     headers = base_cols + extra_cols
@@ -81,9 +82,10 @@ def format_results(
                 row.append(str(r.get("rev", "-")))
             if "Age (d)" in extra_cols:
                 row.append(str(r.get("age_days", "-")))
-            if "Duration" in extra_cols:
-                row.append(str(r.get("duration", "-")))
-            if verbose:
+            if "Deviation" in extra_cols:
+                dev = r.get("deviation")
+                row.append(f"{dev:+d}" if isinstance(dev, (int, float)) else "-")
+            if "Error" in extra_cols:
                 row.append(str(r.get("error", "")))
             table.add_row(*row)
         from rich.console import Console
@@ -110,9 +112,10 @@ def format_results(
             row_vals.append(str(r.get("rev", "-")))
         if "Age (d)" in extra_cols:
             row_vals.append(str(r.get("age_days", "-")))
-        if "Duration" in extra_cols:
-            row_vals.append(str(r.get("duration", "-")))
-        if verbose:
+        if "Deviation" in extra_cols:
+            dev = r.get("deviation")
+            row_vals.append(f"{dev:+d}" if isinstance(dev, (int, float)) else "-")
+        if "Error" in extra_cols:
             row_vals.append(str(r.get("error", "")))
         lines.append(_plain_row(row_vals, col_widths))
     return "\n".join(lines)

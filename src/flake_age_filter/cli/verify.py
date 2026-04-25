@@ -29,9 +29,8 @@ def _process_input(
 ) -> Dict[str, object] | None:
     """Return a dict describing the age‑check result for a single input.
 
-    ``now_ts`` is the current Unix epoch (seconds).  The function resolves the
-    remote reference, fetches the commit timestamp (using the fast GitHub API
-    when possible), and finally checks the age with ``core.age_check``.
+    Checks whether the currently locked commit (inp.rev) satisfies the min_age.
+    Does NOT search for older commits.
 
     Returns ``None`` for non‑git inputs (e.g. ``path`` type) which are skipped
     from the age check.
@@ -41,62 +40,51 @@ def _process_input(
         # Skip path inputs – they are local and have no remote git history.
         return None
 
-    # Resolve the ref (branch/tag) to use for the remote query.
-    effective_ref = resolve_default_ref(git_url, inp.ref, timeout, method=method)
+    # Must have a locked revision to check.
+    if not inp.rev:
+        return {
+            "ok": False,
+            "input": inp.name,
+            "error": "No locked revision (inp.rev is None)",
+        }
 
-    # Determine which revision to query – prefer the locked rev if it exists.
-    rev_to_check = inp.rev or effective_ref
-    # Get the timestamp for that specific revision.
-    ts_res = git_ops.get_commit_timestamp(git_url, rev_to_check, timeout, method=method)
+    # Get the timestamp for the locked revision.
+    ts_res = git_ops.get_commit_timestamp(git_url, inp.rev, timeout, method=method)
     # Accept both dict and raw int responses.
     ts = None
     if isinstance(ts_res, dict):
-        if ts_res.get("ok"):
-            ts = ts_res["timestamp"]
-        # else: fall back to search below
+        if not ts_res.get("ok"):
+            return {
+                "ok": False,
+                "input": inp.name,
+                "rev": inp.rev,
+                "error": ts_res.get("error", "failed to get timestamp"),
+            }
+        ts = ts_res["timestamp"]
     else:
         # Assume raw int is the timestamp
         ts = ts_res
 
-    if ts is not None:
-        age_res = check_age(ts, now_ts, min_age)
-        if age_res.get("ok"):
-            # The specific revision is old enough -> use it.
-            result: Dict[str, object] = {
-                "ok": True,
-                "input": inp.name,
-                "rev": rev_to_check,
-                "timestamp": ts,
-                "age_days": age_res["age_days"],
-                "duration": format_duration(age_res["age_days"]),
-            }
-            return result
-        # If not old enough, we will search for an older commit below.
+    if ts is None:
+        return {
+            "ok": False,
+            "input": inp.name,
+            "rev": inp.rev,
+            "error": "Could not determine commit timestamp",
+        }
 
-    # Either we don't have a locked rev, or it's too new, or we couldn't get its timestamp.
-    # Find the oldest commit meeting the age requirement using the selected method.
-    find_res = git_ops.find_oldest_commit_meeting_age(
-        git_url,
-        effective_ref,
-        min_age,
-        method=method,
-        timeout=timeout,
-    )
-    if not find_res.get("ok"):
-        return {"ok": False, "error": find_res.get("error", "unknown error")}
-    ts = find_res["timestamp"]
     age_res = check_age(ts, now_ts, min_age)
+    deviation = age_res["age_days"] - min_age  # 偏差：正＝超過、負＝不足
     result: Dict[str, object] = {
         "ok": age_res["ok"],
         "input": inp.name,
-        "rev": find_res["rev"],
+        "rev": inp.rev,
         "timestamp": ts,
         "age_days": age_res["age_days"],
+        "deviation": deviation,
     }
     if not age_res["ok"]:
         result["error"] = age_res["error"]
-    else:
-        result["duration"] = format_duration(age_res["age_days"])
     return result
 
 
