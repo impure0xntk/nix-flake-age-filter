@@ -258,6 +258,7 @@ class SubprocessGitBackend(GitBackend):
         max_depth: int = 3000,
         timeout: Optional[int] = None,
         now: Optional[datetime] = None,
+        verbose: bool = False,
         **kwargs,
     ) -> Dict[str, Any]:
         """Find the oldest commit meeting minimum age requirement."""
@@ -265,6 +266,10 @@ class SubprocessGitBackend(GitBackend):
         cutoff_ts = now_ts - min_age_days * 86_400
         
         resolved_ref = ref or self.resolve_default_ref(git_url, timeout=timeout)
+        
+        if verbose:
+            print(f"[DEBUG] [subprocess] git_url={git_url}, ref={ref} -> resolved_ref={resolved_ref}", file=sys.stderr)
+            print(f"[DEBUG] [subprocess] cutoff_ts={cutoff_ts} ({min_age_days}d ago)", file=sys.stderr)
         
         with tempfile.TemporaryDirectory() as tmpdir:
             repo_dir = os.path.join(tmpdir, "repo.git")
@@ -285,6 +290,9 @@ class SubprocessGitBackend(GitBackend):
             head_ts: Optional[int] = None
             
             while depth <= max_depth:
+                if verbose:
+                    print(f"[DEBUG] [subprocess] Fetching depth={depth}...", file=sys.stderr)
+                
                 # Fetch with current depth
                 fetch_args = ["fetch", "--depth", str(depth), git_url]
                 if resolved_ref:
@@ -322,6 +330,9 @@ class SubprocessGitBackend(GitBackend):
                 # Store HEAD info (newest commit)
                 head_sha, head_ts = commits[-1]
                 
+                if verbose:
+                    print(f"[DEBUG] [subprocess] Got {len(commits)} commits, head_ts={head_ts}", file=sys.stderr)
+                
                 # Find the newest commit that meets the age requirement
                 # Commits are in reverse order (oldest first), so we iterate from newest to oldest
                 found_sha = None
@@ -333,7 +344,12 @@ class SubprocessGitBackend(GitBackend):
                         break
                 
                 if found_sha:
+                    if verbose:
+                        print(f"[DEBUG] [subprocess] Found commit {found_sha[:8]} ts={found_ts} (meets {min_age_days}d)", file=sys.stderr)
                     break
+                
+                if verbose:
+                    print(f"[DEBUG] [subprocess] No commit met age requirement, increasing depth...", file=sys.stderr)
                 
                 # Check if we've fetched all history
                 ret, out, err = self._run_git(
@@ -346,6 +362,8 @@ class SubprocessGitBackend(GitBackend):
                         count = int(out.strip())
                         if count < depth:
                             # Reached end of history
+                            if verbose:
+                                print(f"[DEBUG] [subprocess] Reached end of history ({count} commits)", file=sys.stderr)
                             break
                     except ValueError:
                         pass

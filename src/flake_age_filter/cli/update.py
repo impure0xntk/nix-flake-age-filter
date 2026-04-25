@@ -48,6 +48,7 @@ def _choose_rev(
     timeout: int,
     method: str = "auto",
     now_ts: int | None = None,
+    verbose: bool = False,
 ) -> Dict[str, object] | None:
     """Return a dict with a suitable rev (or error) for *inp*.
 
@@ -78,6 +79,7 @@ def _choose_rev(
         timeout=timeout,
         method=method,
         now=now_instant,
+        verbose=verbose,
     )
     if not find_res.get("ok"):
         # Propagate error.
@@ -140,7 +142,7 @@ def update(
     from ..core.parallel import execute_parallel
 
     def _process_update_inp(inp: FlakeInput) -> dict | None:
-        return _choose_rev(inp, min_age, timeout, method=method, now_ts=now_ts)
+        return _choose_rev(inp, min_age, timeout, method=method, now_ts=now_ts, verbose=verbose)
 
     processed = execute_parallel(inputs_all, _process_update_inp, parallel)
     for inp, res in processed:

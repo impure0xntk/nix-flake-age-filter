@@ -140,6 +140,7 @@ class GitBackend(ABC):
         max_depth: int = 3000,
         timeout: Optional[int] = None,
         now: Optional[datetime] = None,
+        verbose: bool = False,
         **kwargs,
     ) -> Dict[str, Any]:
         """Find the oldest commit meeting minimum age requirement.

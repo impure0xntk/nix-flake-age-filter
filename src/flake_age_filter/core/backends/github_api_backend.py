@@ -6,6 +6,7 @@ Provides the fastest method for GitHub-hosted repos.
 
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
@@ -189,6 +190,7 @@ class GitHubAPIBackend(GitBackend):
         max_depth: int = 3000,
         timeout: Optional[int] = None,
         now: Optional[datetime] = None,
+        verbose: bool = False,
         **kwargs,
     ) -> Dict[str, Any]:
         """Find the oldest commit meeting minimum age requirement via GitHub API."""
@@ -202,9 +204,16 @@ class GitHubAPIBackend(GitBackend):
         
         resolved_ref = ref or self.resolve_default_ref(git_url, timeout=timeout)
         
+        if verbose:
+            print(f"[DEBUG] [github] owner={owner}, repo={repo}, ref={ref} -> resolved_ref={resolved_ref}", file=sys.stderr)
+            print(f"[DEBUG] [github] cutoff_ts={cutoff_ts} ({min_age_days}d ago)", file=sys.stderr)
+        
         # Build cutoff ISO string (one minute earlier for edge cases)
         cutoff_dt = datetime.fromtimestamp(cutoff_ts - 60, tz=timezone.utc)
         cutoff_iso = cutoff_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        
+        if verbose:
+            print(f"[DEBUG] [github] Querying commits until {cutoff_iso}...", file=sys.stderr)
         
         # Query for commits older than cutoff.
         # GitHub API returns commits in chronological order (newest first by default).
@@ -216,6 +225,9 @@ class GitHubAPIBackend(GitBackend):
             timeout=timeout,
         )
         
+        if verbose:
+            print(f"[DEBUG] [github] API response: status={status}, data_len={len(data) if isinstance(data, list) else 'N/A'}", file=sys.stderr)
+        
         if status == 200 and data:
             commit = data[0]
             commit_data = commit.get("commit", {})
@@ -224,6 +236,8 @@ class GitHubAPIBackend(GitBackend):
             
             if ts is not None:
                 dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+                if verbose:
+                    print(f"[DEBUG] [github] Found commit {commit.get('sha', '')[:8]} ts={ts}", file=sys.stderr)
                 return {
                     "ok": True,
                     "rev": commit.get("sha"),
@@ -237,6 +251,8 @@ class GitHubAPIBackend(GitBackend):
                 }
         
         if status == 403:
+            if verbose:
+                print(f"[DEBUG] [github] Rate limited (403)", file=sys.stderr)
             return {
                 "ok": False,
                 "rev": None,
@@ -251,6 +267,8 @@ class GitHubAPIBackend(GitBackend):
             }
         
         if status == 404:
+            if verbose:
+                print(f"[DEBUG] [github] Ref not found (404)", file=sys.stderr)
             return {
                 "ok": False,
                 "rev": None,
@@ -264,6 +282,8 @@ class GitHubAPIBackend(GitBackend):
             }
         
         # Get HEAD commit to report shortfall
+        if verbose:
+            print(f"[DEBUG] [github] Fetching HEAD commit to report shortfall...", file=sys.stderr)
         status, data = self._api_get(
             url,
             params={"sha": resolved_ref, "per_page": 1},
@@ -279,6 +299,8 @@ class GitHubAPIBackend(GitBackend):
             if ts is not None:
                 age_days = (now_ts - ts) / 86_400
                 dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+                if verbose:
+                    print(f"[DEBUG] [github] HEAD is only {age_days:.1f}d old (needs {min_age_days}d)", file=sys.stderr)
                 return {
                     "ok": False,
                     "rev": None,

@@ -198,6 +198,7 @@ def find_oldest_commit_meeting_age(
     timeout: int = 300,
     method: str = "auto",
     now: Optional[datetime] = None,
+    verbose: bool = False,
 ) -> Dict[str, Any]:
     """Find the oldest commit meeting the minimum age requirement.
     
@@ -210,6 +211,7 @@ def find_oldest_commit_meeting_age(
         timeout: Request timeout in seconds
         method: Method to use: "github", "pygit2", "subprocess", "auto"
         now: Override current time for reproducible checks
+        verbose: Enable debug output to stderr
     
     Returns:
         Dict with keys: ok, rev, timestamp, depth, date, error, too_new_*
@@ -225,6 +227,9 @@ def find_oldest_commit_meeting_age(
             print(f"Warning: Unknown method '{method}', falling back to subprocess", file=sys.stderr)
             backend = get_backend("subprocess", timeout=timeout)
     
+    if verbose:
+        print(f"[DEBUG] Finding commit for {git_url} (ref={ref}, min_age={min_age_days}d)", file=sys.stderr)
+    
     result = backend.find_oldest_commit_meeting_age(
         git_url,
         ref,
@@ -233,6 +238,7 @@ def find_oldest_commit_meeting_age(
         max_depth=max_depth,
         timeout=timeout,
         now=now,
+        verbose=verbose,
     )
     return result
 

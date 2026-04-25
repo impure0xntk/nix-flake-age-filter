@@ -167,6 +167,7 @@ class Pygit2Backend(GitBackend):
         max_depth: int = 3000,
         timeout: Optional[int] = None,
         now: Optional[datetime] = None,
+        verbose: bool = False,
         **kwargs,
     ) -> Dict[str, Any]:
         """Find the oldest commit meeting minimum age requirement."""
@@ -179,6 +180,10 @@ class Pygit2Backend(GitBackend):
         
         resolved_ref = ref or self.resolve_default_ref(git_url, timeout=timeout)
         
+        if verbose:
+            print(f"[DEBUG] [pygit2] git_url={git_url}, ref={ref} -> resolved_ref={resolved_ref}", file=sys.stderr)
+            print(f"[DEBUG] [pygit2] cutoff_ts={cutoff_ts} ({min_age_days}d ago)", file=sys.stderr)
+        
         with tempfile.TemporaryDirectory() as tmpdir:
             try:
                 # Clone with initial depth
@@ -189,6 +194,9 @@ class Pygit2Backend(GitBackend):
                 head_ts: Optional[int] = None
                 
                 while depth <= max_depth:
+                    if verbose:
+                        print(f"[DEBUG] [pygit2] Cloning with depth={depth}...", file=sys.stderr)
+                    
                     repo = pygit2.clone_repository(
                         git_url,
                         tmpdir,
@@ -211,6 +219,9 @@ class Pygit2Backend(GitBackend):
                     
                     head_sha, head_ts = commits[0]  # First is newest
                     
+                    if verbose:
+                        print(f"[DEBUG] [pygit2] Got {len(commits)} commits, head_ts={head_ts}", file=sys.stderr)
+                    
                     # Find the newest commit that meets the age requirement
                     found_sha = None
                     found_ts = None
@@ -221,11 +232,18 @@ class Pygit2Backend(GitBackend):
                             break
                     
                     if found_sha:
+                        if verbose:
+                            print(f"[DEBUG] [pygit2] Found commit {found_sha[:8]} ts={found_ts} (meets {min_age_days}d)", file=sys.stderr)
                         break
+                    
+                    if verbose:
+                        print(f"[DEBUG] [pygit2] No commit met age requirement, increasing depth...", file=sys.stderr)
                     
                     # Check if we've reached the end
                     commit_count = len(commits)
                     if commit_count < depth:
+                        if verbose:
+                            print(f"[DEBUG] [pygit2] Reached end of history ({commit_count} commits)", file=sys.stderr)
                         break
                     
                     depth = min(depth * 2, max_depth)
