@@ -42,12 +42,12 @@ def _process_input(
         return None
 
     # Resolve the ref (branch/tag) to use for the remote query.
-    effective_ref = resolve_default_ref(git_url, inp.ref, timeout)
+    effective_ref = resolve_default_ref(git_url, inp.ref, timeout, method=method)
 
     # Determine which revision to query – prefer the locked rev if it exists.
     rev_to_check = inp.rev or effective_ref
     # Get the timestamp for that specific revision.
-    ts_res = git_ops.get_commit_timestamp(git_url, rev_to_check, timeout)
+    ts_res = git_ops.get_commit_timestamp(git_url, rev_to_check, timeout, method=method)
     # Accept both dict and raw int responses.
     ts = None
     if isinstance(ts_res, dict):
@@ -129,6 +129,18 @@ def verify(
     given, in which case a JSON document is emitted.  Errors are reported on
     stderr and cause a non‑zero exit status.
     """
+    # Validate method parameter early
+    valid_methods = ["auto"] + list_backends()
+    if method not in valid_methods:
+        # Suggest closest match
+        import difflib
+        suggestions = difflib.get_close_matches(method, valid_methods, n=1, cutoff=0.6)
+        msg = f"Error: Invalid method '{method}'. Valid methods: {', '.join(valid_methods)}"
+        if suggestions:
+            msg += f"\nDid you mean: '{suggestions[0]}'?"
+        typer.secho(msg, fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
     try:
         inputs_all = read_flake_inputs(flake_lock)
     except FlakeAgeError as exc:

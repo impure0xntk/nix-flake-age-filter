@@ -49,6 +49,11 @@ class FlakeInput:
             or self.original.get("branch")
         )
 
+    @property
+    def is_path(self) -> bool:
+        """Return True if this input is a local path reference."""
+        return self.input_type == "path"
+
     # ---------------------------------------------------------------------
     # URL helpers – these are pure functions that do not perform any I/O.
     # ---------------------------------------------------------------------
@@ -57,8 +62,8 @@ class FlakeInput:
 
         Supports the typical ``github`` style (HTTPS) **and** an explicit SSH
         URL when the source dictionary already provides one.  Returns ``None``
-        for inputs that are not fetchable via git (e.g. ``path`` or unknown
-        types).
+        for inputs that are not fetchable via git (e.g. ``path``, ``file:``
+        URLs, or unknown types).
         """
         t = self.input_type
         if t == "github":
@@ -83,7 +88,11 @@ class FlakeInput:
             repo = self.locked.get("repo", self.locked.get("project", ""))
             return f"https://git.sr.ht/~{owner}/{repo}"
         if t == "git":
-            return self.locked.get("url") or self.original.get("url")
+            url = self.locked.get("url") or self.original.get("url")
+            # Skip local file URLs (file: scheme) — they have no remote git history.
+            if url and url.startswith("file:"):
+                return None
+            return url
         if t == "indirect":
             oref = self.original.get("id", "")
             if "/" in oref:

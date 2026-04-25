@@ -112,6 +112,7 @@ def get_commit_timestamp(
     git_url: str,
     ref: str,
     timeout: int = 120,
+    method: str = "auto",
 ) -> Dict[str, Any]:
     """Get commit timestamp for a revision.
     
@@ -119,11 +120,20 @@ def get_commit_timestamp(
         git_url: Git URL of the repository
         ref: Revision to get timestamp for (SHA, branch, tag)
         timeout: Request timeout in seconds
+        method: Backend method to use ("subprocess", "pygit2", "github", "auto")
     
     Returns:
         Dict with keys: ok, timestamp, error, rev
     """
-    backend = get_current_backend()
+    if method == "auto":
+        backend = get_auto_backend(timeout=timeout)
+    else:
+        try:
+            backend = get_backend(method, timeout=timeout)
+        except ValueError as e:
+            # Method not found, fall back to subprocess (not auto) to respect user intent
+            print(f"Warning: Unknown method '{method}', falling back to subprocess: {e}", file=sys.stderr)
+            backend = get_backend("subprocess", timeout=timeout)
     return backend.get_commit_timestamp(git_url, ref, timeout=timeout)
 
 
@@ -154,6 +164,7 @@ def resolve_default_ref(
     git_url: str,
     ref: Optional[str],
     timeout: int = 15,
+    method: str = "auto",
 ) -> str:
     """Resolve the default ref (branch) for a remote.
     
@@ -161,11 +172,20 @@ def resolve_default_ref(
         git_url: Git URL of the remote
         ref: Optional explicit ref to resolve
         timeout: Request timeout in seconds
+        method: Backend method to use ("subprocess", "pygit2", "github", "auto")
     
     Returns:
         Resolved ref name
     """
-    backend = get_current_backend()
+    if method == "auto":
+        backend = get_auto_backend(timeout=timeout)
+    else:
+        try:
+            backend = get_backend(method, timeout=timeout)
+        except ValueError:
+            # Fall back to subprocess to respect user intent of avoiding GitHub API
+            print(f"Warning: Unknown method '{method}', falling back to subprocess", file=sys.stderr)
+            backend = get_backend("subprocess", timeout=timeout)
     return backend.resolve_default_ref(git_url, ref, timeout=timeout)
 
 
@@ -202,8 +222,9 @@ def find_oldest_commit_meeting_age(
         try:
             backend = get_backend(method, timeout=timeout)
         except ValueError:
-            # Fall back to auto if method not found
-            backend = get_auto_backend(timeout=timeout)
+            # Fall back to subprocess to respect user intent of avoiding GitHub API
+            print(f"Warning: Unknown method '{method}', falling back to subprocess", file=sys.stderr)
+            backend = get_backend("subprocess", timeout=timeout)
     
     result = backend.find_oldest_commit_meeting_age(
         git_url,
