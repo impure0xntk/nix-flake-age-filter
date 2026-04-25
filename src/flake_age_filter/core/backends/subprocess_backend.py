@@ -31,11 +31,11 @@ class SubprocessGitBackend(GitBackend):
     
     name = "subprocess"
     
-    def __init__(self, timeout: int = 120, git_path: Optional[str] = None):
+    def __init__(self, timeout: int = 300, git_path: Optional[str] = None):
         """Initialize the subprocess backend.
         
         Args:
-            timeout: Default timeout for operations.
+            timeout: Default timeout for operations (default: 300s).
             git_path: Path to git executable (default: auto-detect).
         """
         super().__init__(timeout=timeout)

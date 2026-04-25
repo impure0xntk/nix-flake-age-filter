@@ -21,7 +21,7 @@ from whenever import Instant
 
 
 # Helper functions for subprocess operations
-def run_cmd(cmd: list, env_overrides: dict | None = None, timeout: int = 120):
+def run_cmd(cmd: list, env_overrides: dict | None = None, timeout: int = 300):
     """Run a command and return (returncode, stdout, stderr)."""
     import subprocess
     import os
@@ -84,9 +84,6 @@ def _choose_rev(
         ref=inp.ref,
         min_age_days=min_age,
         timeout=timeout,
-        locked_ts=None,
-        input_name=inp.name,
-        original=inp.original,
         method=method,
         now=now_instant,
     )
@@ -107,7 +104,7 @@ def update(
     min_age: int = typer.Option(..., "--min-age", help="Minimum commit age in days"),
     flake_lock: Path = typer.Argument(..., help="Path to flake.lock"),
     timeout: int = typer.Option(
-        120, "--timeout", help="Network/git timeout in seconds"
+        300, "--timeout", help="Network/git timeout in seconds (default: 300)"
     ),
     inputs: List[str] = typer.Option(
         None, "--inputs", help="Specific inputs to update (default: all)"
