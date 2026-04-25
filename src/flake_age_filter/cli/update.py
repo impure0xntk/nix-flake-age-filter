@@ -195,8 +195,12 @@ def update(
     if not overrides:
         typer.secho("No overrides to apply.", fg=typer.colors.YELLOW)
         raise typer.Exit(code=0)
-    # Build cmd: nix flake update --override-input <name> <url> --override-input ...
-    cmd = ["nix", "flake", "update"]
+    # Determine the flake root directory from the flake.lock path.
+    flake_root = flake_lock.parent
+    # Build cmd: nix flake update --flake <flake-root> --override-input <name> <url> ...
+    # NOTE: --override-input implies --no-write-lock-file for nix flake update,
+    # so we use nix flake lock instead to write the overrides to the lock file.
+    cmd = ["nix", "flake", "lock", "--flake", str(flake_root)]
     for o in overrides:
         # Split "name=url" into name and url for --override-input flag
         # The URL part may contain '=' (e.g., git+https://...?rev=xxx), so only split on the first '='

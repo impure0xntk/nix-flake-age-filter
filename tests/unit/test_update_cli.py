@@ -102,6 +102,52 @@ def test_choose_rev_falls_back_to_find_when_newer(mock_git_ops):
     m_find.assert_called_once()
 
 
+def test_cli_updates_to_newest_qualified_commit(mock_git_ops):
+    """Test that CLI updates to the newest commit meeting age requirement.
+
+    Scenario: locked input is 10 days old, but a 5-day-old commit exists.
+    With --min-age 5, the tool should update to the 5-day-old commit.
+    """
+    from typer.testing import CliRunner
+    import time
+
+    runner = CliRunner()
+    m_resolve, m_ts, m_find = mock_git_ops
+
+    now_ts = int(time.time())
+    # 10 days ago - current locked revision
+    ten_days_ago = now_ts - (10 * 86400)
+    # 5 days ago - newer commit that meets the 5-day requirement
+    five_days_ago = now_ts - (5 * 86400)
+
+    m_resolve.return_value = "main"
+    m_ts.return_value = {"ok": True, "timestamp": ten_days_ago}
+    m_find.return_value = {"ok": True, "rev": "five_day_rev", "timestamp": five_days_ago}
+
+    flake_lock_content = {
+        "nodes": {
+            "root": {"inputs": {"myinput": "myinput"}},
+            "myinput": {
+                "locked": {
+                    "type": "git",
+                    "url": "git+https://example.com/repo.git",
+                    "rev": "ten_day_rev",
+                }
+            },
+        }
+    }
+    tmp = Path(tempfile.mkdtemp()) / "flake.lock"
+    tmp.write_text(json.dumps(flake_lock_content))
+
+    # Dry-run to check the override value
+    result = runner.invoke(app, ["--min-age", "5", str(tmp), "--dry-run"])
+    assert result.exit_code == 0
+    out = result.stdout
+    # Should contain the newer commit (5 days old) that meets the requirement
+    assert "five_day_rev" in out, f"Expected 'five_day_rev' in output: {out}"
+    assert "ten_day_rev" not in out, f"Should not keep old rev: {out}"
+
+
 def test_cli_skips_path_inputs_and_outputs_overrides(mock_git_ops):
     """Test that the CLI correctly skips path inputs and generates overrides for git inputs."""
     from typer.testing import CliRunner
