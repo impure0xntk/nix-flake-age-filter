@@ -214,7 +214,6 @@ def find_oldest_commit_meeting_age(
     Returns:
         Dict with keys: ok, rev, timestamp, depth, date, error, too_new_*
     """
-    print(f"DEBUG: find_oldest_commit_meeting_age called with method={method}", file=sys.stderr)
     # Select backend based on method
     if method == "auto":
         backend = get_auto_backend(timeout=timeout)
@@ -235,7 +234,6 @@ def find_oldest_commit_meeting_age(
         timeout=timeout,
         now=now,
     )
-    print(f"DEBUG: backend result={result}", file=sys.stderr)
     return result
 
 
