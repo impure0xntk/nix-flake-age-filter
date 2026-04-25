@@ -58,16 +58,33 @@ def test_choose_rev_returns_none_for_path_input(mock_git_ops):
     assert res is None
 
 
-def test_choose_rev_uses_start_rev_when_age_ok(mock_git_ops):
+def test_choose_rev_always_searches_newest_meeting_age(mock_git_ops):
+    """Test that _choose_rev always searches for the newest commit meeting age requirement."""
     m_resolve, m_ts, m_find = mock_git_ops
     m_resolve.return_value = "main"
-    # Simulate a timestamp older than min_age.
-    old_ts = 1_600_000_000
-    m_ts.return_value = {"ok": True, "timestamp": old_ts}
+    # Even if current rev is old enough, should still search for newest meeting age.
+    m_ts.return_value = {"ok": True, "timestamp": 1_600_000_000}
+    # Mock find to return a different (newer) commit that meets age requirement.
+    m_find.return_value = {"ok": True, "rev": "newer_rev", "timestamp": 1_650_000_000}
     inp = make_input(name="foo", url="git+https://example.com/repo.git", rev="abcd1234")
     res = _choose_rev(inp, min_age=30, timeout=10, now_ts=1_700_000_000)
-    assert res == {"ok": True, "rev": "abcd1234", "timestamp": old_ts}
-    m_find.assert_not_called()
+    # Should return the commit found by find_oldest_commit_meeting_age, not the current one.
+    assert res == {"ok": True, "rev": "newer_rev", "timestamp": 1_650_000_000}
+    m_find.assert_called_once()
+
+
+def test_choose_rev_returns_none_when_found_rev_matches_locked(mock_git_ops):
+    """Test that _choose_rev returns None when found rev matches locked rev."""
+    m_resolve, m_ts, m_find = mock_git_ops
+    m_resolve.return_value = "main"
+    m_ts.return_value = {"ok": True, "timestamp": 1_600_000_000}
+    # Mock find to return the same rev as currently locked.
+    m_find.return_value = {"ok": True, "rev": "abcd1234", "timestamp": 1_600_000_000}
+    inp = make_input(name="foo", url="git+https://example.com/repo.git", rev="abcd1234")
+    res = _choose_rev(inp, min_age=30, timeout=10, now_ts=1_700_000_000)
+    # No update needed since found rev matches locked rev.
+    assert res is None
+    m_find.assert_called_once()
 
 
 def test_choose_rev_falls_back_to_find_when_newer(mock_git_ops):
@@ -92,9 +109,11 @@ def test_cli_skips_path_inputs_and_outputs_overrides(mock_git_ops):
     runner = CliRunner()
     m_resolve, m_ts, m_find = mock_git_ops
     m_resolve.return_value = "main"
+    
+    # Simulate that find returns a newer commit than currently locked.
+    # locked rev is "abcd", find returns "newer_rev".
     m_ts.return_value = {"ok": True, "timestamp": 1_600_000_000}
-    # No need to find older commits.
-    m_find.return_value = {"ok": False, "error": "no suitable"}
+    m_find.return_value = {"ok": True, "rev": "newer_rev", "timestamp": 1_650_000_000}
 
     # prepare a minimal flake.lock file with two inputs – one git, one path.
     # NOTE: The lock file must have a 'root' node for extract_locked_inputs to work.

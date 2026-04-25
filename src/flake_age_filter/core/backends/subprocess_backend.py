@@ -298,7 +298,7 @@ class SubprocessGitBackend(GitBackend):
                 if ret != 0:
                     return {"ok": False, "error": f"Fetch failed: {err}"}
                 
-                # Get all commits with timestamps
+                # Get all commits with timestamps (oldest first due to --reverse)
                 ret, out, err = self._run_git(
                     ["log", "--format=%H %ct", "--reverse"],
                     cwd=repo_dir,
@@ -319,11 +319,14 @@ class SubprocessGitBackend(GitBackend):
                 if not commits:
                     return {"ok": False, "error": "No commits found"}
                 
-                # Store HEAD info
+                # Store HEAD info (newest commit)
                 head_sha, head_ts = commits[-1]
                 
-                # Find first commit meeting age requirement
-                for sha, ts in commits:
+                # Find the newest commit that meets the age requirement
+                # Commits are in reverse order (oldest first), so we iterate from newest to oldest
+                found_sha = None
+                found_ts = None
+                for sha, ts in reversed(commits):
                     if ts <= cutoff_ts:
                         found_sha = sha
                         found_ts = ts

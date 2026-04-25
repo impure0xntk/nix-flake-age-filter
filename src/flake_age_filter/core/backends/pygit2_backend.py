@@ -196,9 +196,12 @@ class Pygit2Backend(GitBackend):
                         checkout_branch=resolved_ref,
                     )
                     
-                    # Walk commits from oldest to newest
+                    # Walk commits from newest to oldest (strictly time-sorted)
                     commits = []
-                    walker = repo.walk(repo.head.target, pygit2.GIT_SORT_TOPOLOGICAL | pygit2.GIT_SORT_REVERSE)
+                    walker = repo.walk(
+                        repo.head.target,
+                        pygit2.GIT_SORT_TIME
+                    )
                     
                     for commit in walker:
                         commits.append((commit.hex, commit.commit_time))
@@ -206,9 +209,11 @@ class Pygit2Backend(GitBackend):
                     if not commits:
                         return {"ok": False, "error": "No commits found"}
                     
-                    head_sha, head_ts = commits[-1]
+                    head_sha, head_ts = commits[0]  # First is newest
                     
-                    # Find first commit meeting age requirement
+                    # Find the newest commit that meets the age requirement
+                    found_sha = None
+                    found_ts = None
                     for sha, ts in commits:
                         if ts <= cutoff_ts:
                             found_sha = sha

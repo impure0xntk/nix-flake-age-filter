@@ -206,7 +206,9 @@ class GitHubAPIBackend(GitBackend):
         cutoff_dt = datetime.fromtimestamp(cutoff_ts - 60, tz=timezone.utc)
         cutoff_iso = cutoff_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
         
-        # Query for commits older than cutoff
+        # Query for commits older than cutoff.
+        # GitHub API returns commits in chronological order (newest first by default).
+        # Using per_page=1 returns the *newest* commit that is older than cutoff_iso.
         url = f"https://api.github.com/repos/{owner}/{repo}/commits"
         status, data = self._api_get(
             url,

@@ -66,19 +66,11 @@ def _choose_rev(
     # Determine current time for cutoff calculation.
     if now_ts is None:
         now_ts = int(Instant.now().timestamp())
-    cutoff_ts = now_ts - min_age * 86_400
     now_instant = Instant.from_timestamp(now_ts)
 
-    # First, check if the locked revision (if present) is old enough.
-    if inp.rev:
-        locked_res = git_ops.get_commit_timestamp(git_url, inp.rev, timeout)
-        if locked_res.get("ok"):
-            locked_ts = locked_res["timestamp"]
-            if locked_ts <= cutoff_ts:
-                result = {"ok": True, "rev": inp.rev, "timestamp": locked_ts}
-                return result
-
-    # Then, search for the newest commit that is at least min_age days old.
+    # Always search for the newest commit that is at least min_age days old.
+    # This ensures we get the latest commit that meets the age requirement,
+    # not just keep the current one if it happens to be old enough.
     find_res = git_ops.find_oldest_commit_meeting_age(
         git_url=git_url,
         ref=inp.ref,
