@@ -17,6 +17,7 @@ from ..core import git_ops, list_backends
 
 from ..core.models import FlakeInput
 from ..core.errors import FlakeAgeError
+from whenever import Instant
 
 
 # Helper functions for subprocess operations
@@ -57,8 +58,6 @@ def _choose_rev(
     from the age check, and for git inputs when the newest suitable commit
     matches the currently locked revision (indicating no update is needed).
     """
-    from datetime import datetime, timezone
-
     git_url = inp.to_git_url()
     if not git_url:
         # Skip path inputs – they are local and have no remote git history.
@@ -66,9 +65,9 @@ def _choose_rev(
 
     # Determine current time for cutoff calculation.
     if now_ts is None:
-        now_ts = int(datetime.now(tz=timezone.utc).timestamp())
+        now_ts = int(Instant.now().timestamp())
     cutoff_ts = now_ts - min_age * 86_400
-    now_dt = datetime.fromtimestamp(now_ts, tz=timezone.utc)
+    now_instant = Instant.from_timestamp(now_ts)
 
     # First, check if the locked revision (if present) is old enough.
     if inp.rev:
@@ -89,7 +88,7 @@ def _choose_rev(
         input_name=inp.name,
         original=inp.original,
         method=method,
-        now=now_dt,
+        now=now_instant,
     )
     if not find_res.get("ok"):
         # Propagate error.

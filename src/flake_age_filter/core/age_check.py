@@ -32,8 +32,7 @@ def check_age(
     commit_time = _to_instant(commit)
     now_instant = _to_instant(now)
 
-    delta = now_instant - commit_time
-    age_seconds = delta.total('seconds')
+    age_seconds = now_instant.timestamp() - commit_time.timestamp()
     age_days = int(age_seconds // 86_400)
     ok = age_days >= min_days
 
