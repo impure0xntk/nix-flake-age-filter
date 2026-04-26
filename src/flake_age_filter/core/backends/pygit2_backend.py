@@ -6,6 +6,7 @@ This backend is faster than subprocess but requires libgit2.
 
 from __future__ import annotations
 
+import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path

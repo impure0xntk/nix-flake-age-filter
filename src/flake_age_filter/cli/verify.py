@@ -8,18 +8,23 @@ modules (`core.lock_file`, `core.git_ops`, `core.age_check`).
 from __future__ import annotations
 
 import json
-import os
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import typer
 
-from ..core import git_ops, get_backend, list_backends
+from ..core import git_ops, list_backends
 from ..core.age_check import check_age, format_duration
 from ..core.errors import FlakeAgeError
-from ..core.git_ops import resolve_default_ref, set_backend
 from ..core.lock_file import read_flake_inputs
 from ..core.models import FlakeInput
+from ._common import (
+    get_token_from_env,
+    validate_method,
+    setup_backend,
+    show_rate_limit_info,
+)
 
 
 app = typer.Typer(help="Verify that all flake inputs are at least a given age.")
@@ -89,17 +94,6 @@ def _process_input(
     return result
 
 
-def _get_token_from_env() -> Optional[str]:
-    """Get GitHub token from environment.
-    
-    Checks GITHUB_TOKEN and GH_TOKEN environment variables.
-    
-    Returns:
-        Token string or None if not set.
-    """
-    return os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-
-
 @app.command()
 def verify(
     min_age: int = typer.Option(..., "--min-age", help="Minimum age in days"),
@@ -136,46 +130,14 @@ def verify(
     stderr and cause a non‑zero exit status.
     """
     # Validate method parameter early
-    valid_methods = ["auto"] + list_backends()
-    if method not in valid_methods:
-        # Suggest closest match
-        import difflib
-        suggestions = difflib.get_close_matches(method, valid_methods, n=1, cutoff=0.6)
-        msg = f"Error: Invalid method '{method}'. Valid methods: {', '.join(valid_methods)}"
-        if suggestions:
-            msg += f"\nDid you mean: '{suggestions[0]}'?"
-        typer.secho(msg, fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=1)
+    validate_method(method)
 
     # Set up backend with token if provided
-    token = github_token or _get_token_from_env()
-    if token or verbose:
-        set_backend(method, token=token, verbose=verbose)
-    else:
-        set_backend(method)
+    token = github_token or get_token_from_env()
+    setup_backend(method, token, verbose)
 
     # Show rate limit info for GitHub backend
-    if verbose and method in ("github", "auto"):
-        backend = git_ops.get_current_backend()
-        if hasattr(backend, "get_rate_limit_info"):
-            rate_info = backend.get_rate_limit_info()
-            if rate_info:
-                typer.secho(
-                    f"GitHub API Rate Limit: {rate_info.get('remaining', '?')} remaining, "
-                    f"resets at {rate_info.get('reset_time', '?')}",
-                    fg=typer.colors.CYAN,
-                )
-            elif token:
-                typer.secho(
-                    "GitHub API: Using authenticated requests (5,000 req/hour)",
-                    fg=typer.colors.CYAN,
-                )
-            else:
-                typer.secho(
-                    "GitHub API: Using unauthenticated requests (60 req/hour). "
-                    "Set GITHUB_TOKEN for higher limits.",
-                    fg=typer.colors.YELLOW,
-                )
+    show_rate_limit_info(method, token, verbose)
 
     try:
         inputs_all = read_flake_inputs(flake_lock)
@@ -186,7 +148,7 @@ def verify(
     if inputs:
         inputs_all = [i for i in inputs_all if i.name in inputs]
 
-    now_ts = int(__import__("time").time())
+    now_ts = int(time.time())
     results: List[Dict[str, object]] = []
     failures: List[str] = []
 

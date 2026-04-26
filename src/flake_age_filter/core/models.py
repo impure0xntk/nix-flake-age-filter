@@ -8,7 +8,6 @@ around the logic that existed in the legacy implementation.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Any, Optional
 
 
 @dataclass(frozen=True)

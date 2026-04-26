@@ -18,7 +18,7 @@ Usage:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 from .base import (
     GitBackend,
@@ -82,8 +82,6 @@ def get_auto_backend(timeout: int = 120, token: Optional[str] = None, verbose: b
     Returns:
         Backend instance.
     """
-    from typing import Optional as _Optional
-    
     # Build kwargs for GitHub backend
     github_kwargs = {**kwargs}
     if token is not None:

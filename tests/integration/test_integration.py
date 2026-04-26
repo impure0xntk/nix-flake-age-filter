@@ -65,15 +65,14 @@ class TestEndToEndWorkflow(unittest.TestCase):
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
     # Patch at the usage site, not the definition site.
-    # verify.py does `from ..core.git_ops import resolve_default_ref` and
-    # `from ..core.age_check import check_age` — direct imports create local
-    # references that are unaffected by patching the original module.
+    # verify.py uses git_ops.get_commit_timestamp
+    # update.py uses git_ops.find_oldest_commit_meeting_age
+    # The check_age function is imported from core.age_check
     @patch("flake_age_filter.core.git_ops.get_commit_timestamp")
     @patch("flake_age_filter.cli.verify.check_age")
-    @patch("flake_age_filter.cli.verify.resolve_default_ref")
     @patch("flake_age_filter.core.git_ops.find_oldest_commit_meeting_age")
     def test_verify_and_update_flow(
-        self, mock_find_oldest, mock_resolve_ref, mock_check_age, mock_get_ts
+        self, mock_find_oldest, mock_check_age, mock_get_ts
     ):
         # Simulate both inputs being old enough (check_age returns dict with ok=True)
         mock_check_age.side_effect = lambda *args, **kwargs: {
@@ -87,12 +86,13 @@ class TestEndToEndWorkflow(unittest.TestCase):
             "timestamp": 1_599_000_000,
             "error": None,
         }  # arbitrary old timestamp
-        mock_resolve_ref.return_value = "main"
+        # For update command: simulate finding an older commit
         mock_find_oldest.return_value = {
             "ok": True,
             "rev": "abc123",
             "timestamp": 1_600_000_000,
         }
+
 
         # ---- Verify ----
         result_verify = self.runner.invoke(

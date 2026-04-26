@@ -13,7 +13,6 @@ from __future__ import annotations
 
 # Import exceptions from git_ops for backward compatibility
 from .git_ops import (
-    GitOperationBase,
     GitOperationError,
     GitNotFound,
     GitConfigError,
@@ -44,7 +43,6 @@ from .backends import (
 
 __all__ = [
     # Legacy API (from git_ops)
-    "GitOperationBase",
     "GitOperationError",
     "GitNotFound",
     "GitConfigError",
