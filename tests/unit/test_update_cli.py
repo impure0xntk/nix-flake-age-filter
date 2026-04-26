@@ -69,7 +69,19 @@ def test_choose_rev_always_searches_newest_meeting_age(mock_git_ops):
     inp = make_input(name="foo", url="git+https://example.com/repo.git", rev="abcd1234")
     res = _choose_rev(inp, min_age=30, timeout=10, now_ts=1_700_000_000)
     # Should return the commit found by find_oldest_commit_meeting_age, not the current one.
-    assert res == {"ok": True, "rev": "newer_rev", "timestamp": 1_650_000_000}
+    now_ts = 1_700_000_000
+    new_ts = 1_650_000_000
+    age_days = (now_ts - new_ts) // 86400
+    deviation = age_days - 30
+    expected = {
+        "ok": True,
+        "rev": "newer_rev",
+        "timestamp": new_ts,
+        "age_days": age_days,
+        "deviation": deviation,
+        "current_rev": "abcd1234",
+    }
+    assert res == expected
     m_find.assert_called_once()
 
 
@@ -98,7 +110,19 @@ def test_choose_rev_falls_back_to_find_when_newer(mock_git_ops):
     m_find.return_value = {"ok": True, "rev": "olderrev", "timestamp": 1_600_000_000}
     inp = make_input(name="foo", url="git+https://example.com/repo.git", rev="newrev")
     res = _choose_rev(inp, min_age=30, timeout=10, now_ts=1_700_000_000)
-    assert res == {"ok": True, "rev": "olderrev", "timestamp": 1_600_000_000}
+    now_ts = 1_700_000_000
+    new_ts = 1_600_000_000
+    age_days = (now_ts - new_ts) // 86400
+    deviation = age_days - 30
+    expected = {
+        "ok": True,
+        "rev": "olderrev",
+        "timestamp": new_ts,
+        "age_days": age_days,
+        "deviation": deviation,
+        "current_rev": "newrev",
+    }
+    assert res == expected
     m_find.assert_called_once()
 
 

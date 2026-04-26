@@ -16,6 +16,7 @@ import typer
 
 from ..core.lock_file import read_flake_inputs
 from ..core import git_ops, list_backends
+from ..core.age_check import check_age
 from ..core.models import FlakeInput
 from ..core.errors import FlakeAgeError
 from ._common import (
@@ -90,12 +91,28 @@ def _choose_rev(
         # Propagate error.
         return find_res
 
+    new_rev = find_res["rev"]
+    new_timestamp = find_res["timestamp"]
+
     # If we have a locked revision and it matches the found rev, no update needed.
-    if inp.rev and find_res["rev"] == inp.rev:
+    if inp.rev and new_rev == inp.rev:
         return None
 
-    # Otherwise, return the found commit.
-    return {"ok": True, "rev": find_res["rev"], "timestamp": find_res["timestamp"]}
+    # Calculate age and deviation for the new commit.
+    age_res = check_age(new_timestamp, now_ts, min_age)
+    deviation = age_res["age_days"] - min_age
+
+    result = {
+        "ok": True,
+        "rev": new_rev,
+        "timestamp": new_timestamp,
+        "age_days": age_res["age_days"],
+        "deviation": deviation,
+    }
+    if inp.rev:
+        result["current_rev"] = inp.rev
+
+    return result
 
 
 @app.command()

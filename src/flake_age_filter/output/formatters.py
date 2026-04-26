@@ -71,6 +71,7 @@ _UPDATE_COLUMNS: List[_Column] = [
     _Column("Current Rev", "current_rev", fmt="short_rev", condition="current_rev"),
     _Column("New Rev", "rev", fmt="short_rev", condition="rev"),
     _Column("Age (d)", "age_days", condition="age_days"),
+    _Column("Deviation", "deviation", fmt="signed", condition="deviation"),
     _Column("Error", "error", condition="_has_error"),
 ]
 
@@ -209,6 +210,6 @@ def format_update_results(
 ) -> str:
     """Format update results (update command).
 
-    Columns: Input | Status | Current Rev | New Rev | Age (d) | Error
+    Columns: Input | Status | Current Rev | New Rev | Age (d) | Deviation | Error
     """
     return format_table(results, _UPDATE_COLUMNS, verbose=verbose)
