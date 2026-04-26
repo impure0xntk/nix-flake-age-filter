@@ -204,7 +204,7 @@ def find_oldest_commit_meeting_age(
     git_url: str,
     ref: Optional[str],
     min_age_days: int,
-    min_depth: int = 100,
+    min_depth: int = 20,
     max_depth: int = 3000,
     timeout: int = 300,
     method: str = "auto",

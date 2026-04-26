@@ -43,14 +43,17 @@ class Pygit2Backend(GitBackend):
     
     name = "pygit2"
     
-    def __init__(self, timeout: int = 120):
+    def __init__(self, timeout: int = 120, verbose: bool = False, **kwargs):
         """Initialize the pygit2 backend.
         
         Args:
             timeout: Default timeout for operations.
+            verbose: If True, log debug info to stderr.
+            **kwargs: Additional arguments (ignored, for compatibility with other backends).
         """
         super().__init__(timeout=timeout)
         self._available: Optional[bool] = None
+        self._verbose = verbose
     
     def is_available(self) -> bool:
         """Check if pygit2 is available."""
@@ -181,7 +184,7 @@ class Pygit2Backend(GitBackend):
         
         resolved_ref = ref or self.resolve_default_ref(git_url, timeout=timeout)
         
-        if verbose:
+        if verbose or self._verbose:
             print(f"[DEBUG] [pygit2] git_url={git_url}, ref={ref} -> resolved_ref={resolved_ref}", file=sys.stderr)
             print(f"[DEBUG] [pygit2] cutoff_ts={cutoff_ts} ({min_age_days}d ago)", file=sys.stderr)
         
@@ -195,7 +198,7 @@ class Pygit2Backend(GitBackend):
                 head_ts: Optional[int] = None
                 
                 while depth <= max_depth:
-                    if verbose:
+                    if verbose or self._verbose:
                         print(f"[DEBUG] [pygit2] Cloning with depth={depth}...", file=sys.stderr)
                     
                     repo = pygit2.clone_repository(
@@ -220,7 +223,7 @@ class Pygit2Backend(GitBackend):
                     
                     head_sha, head_ts = commits[0]  # First is newest
                     
-                    if verbose:
+                    if verbose or self._verbose:
                         print(f"[DEBUG] [pygit2] Got {len(commits)} commits, head_ts={head_ts}", file=sys.stderr)
                     
                     # Find the newest commit that meets the age requirement
@@ -233,17 +236,17 @@ class Pygit2Backend(GitBackend):
                             break
                     
                     if found_sha:
-                        if verbose:
+                        if verbose or self._verbose:
                             print(f"[DEBUG] [pygit2] Found commit {found_sha[:8]} ts={found_ts} (meets {min_age_days}d)", file=sys.stderr)
                         break
                     
-                    if verbose:
+                    if verbose or self._verbose:
                         print(f"[DEBUG] [pygit2] No commit met age requirement, increasing depth...", file=sys.stderr)
                     
                     # Check if we've reached the end
                     commit_count = len(commits)
                     if commit_count < depth:
-                        if verbose:
+                        if verbose or self._verbose:
                             print(f"[DEBUG] [pygit2] Reached end of history ({commit_count} commits)", file=sys.stderr)
                         break
                     

@@ -32,16 +32,19 @@ class SubprocessGitBackend(GitBackend):
     
     name = "subprocess"
     
-    def __init__(self, timeout: int = 300, git_path: Optional[str] = None):
+    def __init__(self, timeout: int = 300, git_path: Optional[str] = None, verbose: bool = False, **kwargs):
         """Initialize the subprocess backend.
-        
+
         Args:
             timeout: Default timeout for operations (default: 300s).
             git_path: Path to git executable (default: auto-detect).
+            verbose: If True, log debug info to stderr.
+            **kwargs: Additional arguments (ignored, for compatibility with other backends).
         """
         super().__init__(timeout=timeout)
         self._git_path = git_path
         self._git_available: Optional[bool] = None
+        self._verbose = verbose
     
     def is_available(self) -> bool:
         """Check if git executable is available."""
@@ -93,6 +96,9 @@ class SubprocessGitBackend(GitBackend):
         cmd = [self.git_path] + args
         effective_timeout = timeout or self.timeout
         
+        if self._verbose:
+            print(f"[DEBUG] [subprocess] Running: {' '.join(cmd)}", file=sys.stderr)
+        
         try:
             result = subprocess.run(
                 cmd,
@@ -102,10 +108,20 @@ class SubprocessGitBackend(GitBackend):
                 timeout=effective_timeout,
                 env=env,
             )
+            if self._verbose:
+                print(f"[DEBUG] [subprocess] Exit code: {result.returncode}", file=sys.stderr)
+                if result.stdout:
+                    print(f"[DEBUG] [subprocess] stdout: {result.stdout[:200]}", file=sys.stderr)
+                if result.stderr:
+                    print(f"[DEBUG] [subprocess] stderr: {result.stderr[:200]}", file=sys.stderr)
             return result.returncode, result.stdout, result.stderr
         except subprocess.TimeoutExpired:
+            if self._verbose:
+                print(f"[DEBUG] [subprocess] Command timed out after {effective_timeout}s", file=sys.stderr)
             raise GitBackendError(f"Git command timed out after {effective_timeout}s")
         except FileNotFoundError:
+            if self._verbose:
+                print(f"[DEBUG] [subprocess] Git executable not found: {self.git_path}", file=sys.stderr)
             raise GitNotFoundError(f"Git executable not found: {self.git_path}")
     
     def _run_command(
@@ -275,7 +291,7 @@ class SubprocessGitBackend(GitBackend):
         
         resolved_ref = ref or self.resolve_default_ref(git_url, timeout=timeout)
         
-        if verbose:
+        if verbose or self._verbose:
             print(f"[DEBUG] [subprocess] git_url={git_url}, ref={ref} -> resolved_ref={resolved_ref}", file=sys.stderr)
             print(f"[DEBUG] [subprocess] cutoff_ts={cutoff_ts} ({min_age_days}d ago)", file=sys.stderr)
         
@@ -298,7 +314,7 @@ class SubprocessGitBackend(GitBackend):
             head_ts: Optional[int] = None
             
             while depth <= max_depth:
-                if verbose:
+                if verbose or self._verbose:
                     print(f"[DEBUG] [subprocess] Fetching depth={depth}...", file=sys.stderr)
                 
                 # Fetch with current depth
@@ -316,7 +332,7 @@ class SubprocessGitBackend(GitBackend):
                 
                 # Get all commits with timestamps (oldest first due to --reverse)
                 ret, out, err = self._run_git(
-                    ["log", "--format=%H %ct", "--reverse"],
+                    ["log", "--format=%H %ct", "--reverse", "FETCH_HEAD"],
                     cwd=repo_dir,
                     timeout=timeout,
                 )
@@ -338,7 +354,7 @@ class SubprocessGitBackend(GitBackend):
                 # Store HEAD info (newest commit)
                 head_sha, head_ts = commits[-1]
                 
-                if verbose:
+                if verbose or self._verbose:
                     print(f"[DEBUG] [subprocess] Got {len(commits)} commits, head_ts={head_ts}", file=sys.stderr)
                 
                 # Find the newest commit that meets the age requirement
@@ -352,16 +368,16 @@ class SubprocessGitBackend(GitBackend):
                         break
                 
                 if found_sha:
-                    if verbose:
+                    if verbose or self._verbose:
                         print(f"[DEBUG] [subprocess] Found commit {found_sha[:8]} ts={found_ts} (meets {min_age_days}d)", file=sys.stderr)
                     break
                 
-                if verbose:
+                if verbose or self._verbose:
                     print(f"[DEBUG] [subprocess] No commit met age requirement, increasing depth...", file=sys.stderr)
                 
                 # Check if we've fetched all history
                 ret, out, err = self._run_git(
-                    ["rev-list", "--count", "HEAD"],
+                    ["rev-list", "--count", "FETCH_HEAD"],
                     cwd=repo_dir,
                     timeout=timeout,
                 )
@@ -370,7 +386,7 @@ class SubprocessGitBackend(GitBackend):
                         count = int(out.strip())
                         if count < depth:
                             # Reached end of history
-                            if verbose:
+                            if verbose or self._verbose:
                                 print(f"[DEBUG] [subprocess] Reached end of history ({count} commits)", file=sys.stderr)
                             break
                     except ValueError:

@@ -136,7 +136,7 @@ class GitBackend(ABC):
         git_url: str,
         ref: Optional[str],
         min_age_days: int,
-        min_depth: int = 100,
+        min_depth: int = 20,
         max_depth: int = 3000,
         timeout: Optional[int] = None,
         now: Optional[datetime] = None,
