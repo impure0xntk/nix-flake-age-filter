@@ -26,7 +26,8 @@ These tools are used directly or as dependencies of the `nix-flake-age-filter` p
 ### github backend
 - Requires `requests` package
 - Network access to GitHub API v3
-- Optional `GITHUB_TOKEN` environment variable for higher rate limits
+- Uses `gh` CLI token (`gh auth token`) when available for authentication
+- Optional `GITHUB_TOKEN` environment variable as fallback for higher rate limits
 
 ## Development Tools
 

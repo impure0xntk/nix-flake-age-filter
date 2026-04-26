@@ -83,7 +83,7 @@ The tool uses a pluggable backend system (`core/backends/`) to fetch commit time
 ### Available Backends
 
 - **subprocess** (default): Uses `git` CLI commands. No extra dependencies.
-- **github**: Uses GitHub REST API v3. Requires network access; supports `GITHUB_TOKEN` for higher rate limits.
+- **github**: Uses GitHub REST API v3 via `requests`. Uses `gh` CLI token (`gh auth token`) when available for authentication; falls back to `GITHUB_TOKEN` env var.
 - **auto**: Automatically selects backend based on availability (github → subprocess).
 
 ### Backend Selection
