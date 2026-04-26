@@ -15,17 +15,19 @@ Each input requires 1-2 API calls (resolve ref, get commit), so 10 inputs = 10-2
 ## Implemented Optimizations
 
 ### 1. Pluggable Backend System (Completed)
+
 - **subprocess backend**: Uses `git` CLI (reliable, widely available)
-- **pygit2 backend**: Uses `pygit2` library (faster than subprocess)
 - **github backend**: Uses GitHub REST API v3 (fastest for GitHub repos)
 - **auto backend**: Automatically selects best available backend
 
 ### 2. Parallel Execution (Completed)
+
 - Uses `ThreadPoolExecutor` for concurrent input processing
 - Configurable via `--parallel N` (default: 4, 0=serial)
 - Significantly reduces total execution time for multiple inputs
 
 ### 3. GitHub Token Support (Completed)
+
 - `--github-token` CLI option or `GITHUB_TOKEN` environment variable
 - Increases rate limit from 60 to 5,000 requests/hour
 
@@ -38,7 +40,6 @@ backends/
 ├── base.py           # Abstract interface (GitBackend)
 ├── github_api_backend.py  # REST API (fast but rate-limited)
 ├── subprocess_backend.py  # git CLI (reliable but slower)
-├── pygit2_backend.py     # libgit2 (fast, requires dependency)
 └── registry.py            # Backend registration and lookup
 ```
 
@@ -62,6 +63,7 @@ flake.lock input → parse URL → backend.get_commit_timestamp()
 #### How It Works
 
 GitHub API returns `ETag` and `Last-Modified` headers with every response:
+
 ```http
 HTTP/2 200
 ETag: "a3f2b1c4d5e6"
@@ -69,6 +71,7 @@ Last-Modified: Wed, 25 Oct 2026 14:00:00 GMT
 ```
 
 Subsequent requests with these headers:
+
 ```http
 GET /repos/owner/repo/commits/sha
 If-None-Match: "a3f2b1c4d5e6"
@@ -98,6 +101,7 @@ If unchanged, GitHub returns **304 Not Modified** — **this does NOT count agai
 #### How It Works
 
 GraphQL allows querying multiple resources in a single request:
+
 ```graphql
 query {
   repo1: repository(owner: "NixOS", name: "nixpkgs") {
@@ -154,12 +158,15 @@ query {
 #### Optimization Ideas
 
 1. **Blobless Clone (Git 2.22+)**
+
    ```bash
    git clone --filter=blob:none --bare <url> repo.git
    ```
+
    For commit timestamp checking, we only need commit metadata, not file contents.
 
 2. **Single-Branch Fetch**
+
    ```bash
    git fetch --depth=100 --single-branch origin main
    ```
@@ -172,7 +179,8 @@ query {
 ## Implementation Roadmap
 
 ### Phase 1: Immediate (Completed)
-- ✅ Pluggable backend system (subprocess, pygit2, github, auto)
+
+- ✅ Pluggable backend system (subprocess, github, auto)
 - ✅ Parallel execution with ThreadPoolExecutor
 - ✅ GitHub token support
 

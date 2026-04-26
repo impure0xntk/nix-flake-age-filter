@@ -35,7 +35,7 @@ Two subcommands: `verify` checks all inputs meet the threshold; `update` refresh
 
 - **Verify** that every input in `flake.lock` is at least *N* days old.
 - **Update** inputs while skipping those newer than the threshold.
-- **Multiple Git backends**: subprocess (default), pygit2, GitHub API, or auto‑selection.
+- **Multiple Git backends**: subprocess (default), GitHub API, or auto‑selection.
 - Pure‑Python core with full type hints; optional `rich` for pretty tables.
 - Typer‑based CLI with sub‑commands `verify` and `update`.
 - Parallel execution for faster batch processing (`--parallel`).

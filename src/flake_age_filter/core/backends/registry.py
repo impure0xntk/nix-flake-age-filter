@@ -37,7 +37,7 @@ def get_backend(
     """Get a backend instance by name.
 
     Args:
-        name: Backend name ("subprocess", "pygit2", "github", "auto").
+        name: Backend name ("subprocess", "github", "auto").
         timeout: Default timeout for operations.
         **kwargs: Additional arguments passed to backend constructor.
 

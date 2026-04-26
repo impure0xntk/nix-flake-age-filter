@@ -282,6 +282,18 @@ class SubprocessGitBackend(GitBackend):
         # Default fallback
         return "main"
 
+    @staticmethod
+    def _format_timestamp_for_shallow_since(ts: int) -> str:
+        """Format Unix timestamp for git --shallow-since parameter.
+
+        Args:
+            ts: Unix timestamp (UTC)
+
+        Returns:
+            Date string in YYYY-MM-DD format suitable for --shallow-since
+        """
+        return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+
     def find_oldest_commit_meeting_age(
         self,
         git_url: str,
@@ -296,7 +308,6 @@ class SubprocessGitBackend(GitBackend):
         **kwargs,
     ) -> Dict[str, Any]:
         """Find the oldest commit meeting minimum age requirement."""
-        # 優先順位: now_ts > now > 実際の現在時刻
         if now_ts is not None:
             now_ts = int(now_ts)
         elif now is not None:
@@ -317,47 +328,50 @@ class SubprocessGitBackend(GitBackend):
                 file=sys.stderr,
             )
 
+        # Use git clone with --filter=blob:none to avoid fetching file contents
+        # This significantly reduces bandwidth for large repos like nixpkgs
         with tempfile.TemporaryDirectory() as tmpdir:
             repo_dir = os.path.join(tmpdir, "repo.git")
 
-            # Init bare repo
-            ret, out, err = self._run_git(
-                ["init", "--bare", repo_dir],
-                timeout=timeout,
-            )
-            if ret != 0:
-                return {"ok": False, "error": f"git init failed: {err}"}
+            # Clone as bare repo with blob filter (no file contents)
+            # --filter=blob:none: don't fetch file contents
+            # --depth=1: start minimal, deepen as needed
+            # --no-tags: skip tags
+            # --single-branch: only the target ref
+            clone_ref = resolved_ref or "HEAD"
+            clone_args = [
+                "clone",
+                "--bare",
+                "--filter=blob:none",
+                "--depth=1",
+                "--no-tags",
+                "--single-branch",
+                "--branch",
+                clone_ref,
+                git_url,
+                repo_dir,
+            ]
 
-            # Binary search for commit meeting age requirement
-            depth = min_depth
+            if verbose or self._verbose:
+                print(f"[DEBUG] [subprocess] Cloning {git_url} (ref={clone_ref})...", file=sys.stderr)
+
+            ret, out, err = self._run_git(clone_args, timeout=timeout)
+            if ret != 0:
+                return {"ok": False, "error": f"git clone failed: {err}"}
+
             found_sha: Optional[str] = None
             found_ts: Optional[int] = None
             head_sha: Optional[str] = None
             head_ts: Optional[int] = None
+            depth = 1
 
             while depth <= max_depth:
                 if verbose or self._verbose:
-                    print(
-                        f"[DEBUG] [subprocess] Fetching depth={depth}...",
-                        file=sys.stderr,
-                    )
-
-                # Fetch with current depth
-                fetch_args = ["fetch", "--depth", str(depth), git_url]
-                if resolved_ref:
-                    fetch_args.append(resolved_ref)
-
-                ret, out, err = self._run_git(
-                    fetch_args,
-                    cwd=repo_dir,
-                    timeout=timeout,
-                )
-                if ret != 0:
-                    return {"ok": False, "error": f"Fetch failed: {err}"}
+                    print(f"[DEBUG] [subprocess] Current depth={depth}...", file=sys.stderr)
 
                 # Get all commits with timestamps (oldest first due to --reverse)
                 ret, out, err = self._run_git(
-                    ["log", "--format=%H %ct", "--reverse", "FETCH_HEAD"],
+                    ["log", "--format=%H %ct", "--reverse", "HEAD"],
                     cwd=repo_dir,
                     timeout=timeout,
                 )
@@ -380,15 +394,10 @@ class SubprocessGitBackend(GitBackend):
                 head_sha, head_ts = commits[-1]
 
                 if verbose or self._verbose:
-                    print(
-                        f"[DEBUG] [subprocess] Got {len(commits)} commits, head_ts={head_ts}",
-                        file=sys.stderr,
-                    )
+                    print(f"[DEBUG] [subprocess] Got {len(commits)} commits, head_ts={head_ts}", file=sys.stderr)
 
                 # Find the newest commit that meets the age requirement
-                # Commits are in reverse order (oldest first), so we iterate from newest to oldest
-                found_sha = None
-                found_ts = None
+                # Commits are in reverse order (oldest first), so iterate from newest to oldest
                 for sha, ts in reversed(commits):
                     if ts <= cutoff_ts:
                         found_sha = sha
@@ -397,21 +406,15 @@ class SubprocessGitBackend(GitBackend):
 
                 if found_sha:
                     if verbose or self._verbose:
-                        print(
-                            f"[DEBUG] [subprocess] Found commit {found_sha[:8]} ts={found_ts} (meets {min_age_days}d)",
-                            file=sys.stderr,
-                        )
+                        print(f"[DEBUG] [subprocess] Found commit {found_sha[:8]} ts={found_ts} (meets {min_age_days}d)", file=sys.stderr)
                     break
 
                 if verbose or self._verbose:
-                    print(
-                        "[DEBUG] [subprocess] No commit met age requirement, increasing depth...",
-                        file=sys.stderr,
-                    )
+                    print("[DEBUG] [subprocess] No commit met age requirement, deepening...", file=sys.stderr)
 
                 # Check if we've fetched all history
                 ret, out, err = self._run_git(
-                    ["rev-list", "--count", "FETCH_HEAD"],
+                    ["rev-list", "--count", "HEAD"],
                     cwd=repo_dir,
                     timeout=timeout,
                 )
@@ -421,15 +424,27 @@ class SubprocessGitBackend(GitBackend):
                         if count < depth:
                             # Reached end of history
                             if verbose or self._verbose:
-                                print(
-                                    f"[DEBUG] [subprocess] Reached end of history ({count} commits)",
-                                    file=sys.stderr,
-                                )
+                                print(f"[DEBUG] [subprocess] Reached end of history ({count} commits)", file=sys.stderr)
                             break
                     except ValueError:
                         pass
 
-                depth = min(depth * 2, max_depth)
+                # Deepen the history
+                next_depth = min(depth * 2, max_depth)
+                deepen_amount = next_depth - depth
+
+                ret, out, err = self._run_git(
+                    ["fetch", "--deepen", str(deepen_amount), "--no-tags"],
+                    cwd=repo_dir,
+                    timeout=timeout,
+                )
+                if ret != 0:
+                    # Fetch failed, might be end of history
+                    if verbose or self._verbose:
+                        print(f"[DEBUG] [subprocess] Deepen failed: {err}", file=sys.stderr)
+                    break
+
+                depth = next_depth
 
             if found_sha and found_ts:
                 dt = datetime.fromtimestamp(found_ts, tz=timezone.utc)

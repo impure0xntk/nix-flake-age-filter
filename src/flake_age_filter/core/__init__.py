@@ -37,7 +37,6 @@ from .backends import (
     list_backends,
     get_auto_backend,
     SubprocessGitBackend,
-    Pygit2Backend,
     GitHubAPIBackend,
 )
 
@@ -65,6 +64,5 @@ __all__ = [
     "get_auto_backend",
     # Backend classes
     "SubprocessGitBackend",
-    "Pygit2Backend",
     "GitHubAPIBackend",
 ]
