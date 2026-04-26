@@ -6,13 +6,13 @@ Run directly via `nix run` with these verified commands (tested against the actu
 
 ```bash
 # Verify all inputs are at least 30 days old
-nix run . -- verify --min-age 30 flake.lock
+nix run github:impure0xntk/nix-flake-age-filter -- verify --min-age 30 flake.lock
 
 # Update inputs older than 30 days
-nix run . -- update --min-age 30 flake.lock
+nix run github:impure0xntk/nix-flake-age-filter -- update --min-age 30 flake.lock
 
 # Update inputs older than 30 days (dry-run, no modifications)
-nix run . -- update --min-age 30 --dry-run flake.lock
+nix run github:impure0xntk/nix-flake-age-filter -- update --min-age 30 --dry-run flake.lock
 ```
 
 ## Repository Overview

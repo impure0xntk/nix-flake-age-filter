@@ -6,7 +6,7 @@
   outputs = { self, nixpkgs }:
     let
       inherit (nixpkgs) lib;
-      inherit (lib) filterAttrs mapAttrs mapAttrs' attrNames concatStringsSep floor;
+      inherit (lib) filterAttrs mapAttrs attrNames concatStringsSep floor;
 
       # Convert days to seconds
       daysToSeconds = days: days * 24 * 60 * 60;
