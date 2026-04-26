@@ -204,9 +204,9 @@ def verify(
     if json_out:
         typer.echo(json.dumps(results, indent=2))
     else:
-        from ..output.formatters import format_results
+        from ..output.formatters import format_verify_results
 
-        output = format_results(results, verbose=verbose)
+        output = format_verify_results(results, verbose=verbose)
         typer.echo(output)
         if failures:
             typer.secho(

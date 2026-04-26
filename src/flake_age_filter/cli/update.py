@@ -240,14 +240,10 @@ def update(
         raise typer.Exit(code=0)
 
     # Human‑readable output (non‑dry‑run)
-    for r in results:
-        status = "✅" if r.get("ok") else "❌"
-        line = f"{status} {r['input']}"
-        if r.get("ok"):
-            line += f" -> {r['rev']}"
-        if verbose:
-            line += f" – {r.get('error', '')}"
-        typer.echo(line)
+    from ..output.formatters import format_update_results
+
+    output = format_update_results(results, verbose=verbose)
+    typer.echo(output)
 
     if failures:
         typer.secho(f"\nFailed inputs: {', '.join(failures)}", fg=typer.colors.RED)

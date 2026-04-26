@@ -1,30 +1,31 @@
 """Result formatting utilities for the flake‑age CLI.
 
-The CLI commands (`verify` and `update`) produce a list of dictionaries with the
-following keys (a superset of the original script's output):
+The CLI commands (``verify`` and ``update``) produce lists of dictionaries.
+These helpers render them as human‑readable tables in two modes:
 
-* ``input`` – name of the flake input
-* ``ok`` – boolean indicating whether the age requirement was satisfied
-* ``rev`` – the commit SHA (or the chosen rev for ``update``)
-* ``timestamp`` – Unix epoch of the commit
-* ``age_days`` – integer age in days
-* ``deviation`` – integer deviation from min-age (positive = over, negative = under)
-* ``error`` – optional error message when ``ok`` is ``False``
+* **Rich table** – when the ``rich`` library is available.
+* **Plain text** – aligned‑column fallback.
 
-These helpers provide two output modes:
+Both commands share the same rendering engine via :func:`format_table`, with
+command‑specific convenience wrappers:
 
-* **Rich table** – when the ``rich`` library is available.  The table includes
-  colour‑coded status, age, deviation, and error columns.
-* **Plain text** – fallback when ``rich`` cannot be imported; a simple aligned
-  column layout is used.
+* :func:`format_verify_results` – for ``verify`` output
+* :func:`format_update_results` – for ``update`` output
 """
 
 from __future__ import annotations
 
-from typing import Iterable, List, Mapping
+from dataclasses import dataclass
+from typing import Iterable, List, Mapping, Sequence
+
+
+# ---------------------------------------------------------------------------
+# Shared internals
+# ---------------------------------------------------------------------------
 
 
 def _try_import_rich():
+    """Return ``(Table, Console)`` if *rich* is available, else ``(None, None)``."""
     try:
         from rich.table import Table
         from rich.console import Console
@@ -34,61 +35,119 @@ def _try_import_rich():
         return None, None
 
 
-def _plain_row(columns: List[str], widths: List[int]) -> str:
+def _plain_row(columns: Sequence[str], widths: Sequence[int]) -> str:
     """Return a single formatted row for plain‑text output.
 
-    ``columns`` and ``widths`` must have the same length.  Columns are left‑
-    justified to their respective width.
+    Columns are left‑justified to their respective width.
     """
     padded = [c.ljust(w) for c, w in zip(columns, widths)]
     return "  ".join(padded)
 
 
-def format_results(
-    results: Iterable[Mapping[str, object]], *, verbose: bool = False
-) -> str:
-    """Format *results* into a human‑readable string.
+@dataclass
+class _Column:
+    """Lightweight descriptor for a single table column."""
 
-    If the ``rich`` library is available a colorful table is returned, otherwise
-    a plain‑text table is produced.  The function never prints directly – the
-    caller decides where to send the output (stdout, file, etc.).
+    header: str
+    key: str  # key used to look up the value in a result dict
+    fmt: str = "str"  # format hint: "str" | "signed" | "short_rev"
+    condition: str | None = None  # only include when this key is truthy
+
+
+# Common column definitions ------------------------------------------------
+
+_VERIFY_COLUMNS: List[_Column] = [
+    _Column("Input", "input"),
+    _Column("Status", "_status"),
+    _Column("Rev", "rev", fmt="short_rev", condition="rev"),
+    _Column("Age (d)", "age_days", condition="age_days"),
+    _Column("Deviation", "deviation", fmt="signed", condition="deviation"),
+    _Column("Error", "error", condition="_has_error"),
+]
+
+_UPDATE_COLUMNS: List[_Column] = [
+    _Column("Input", "input"),
+    _Column("Status", "_status"),
+    _Column("Current Rev", "current_rev", fmt="short_rev", condition="current_rev"),
+    _Column("New Rev", "rev", fmt="short_rev", condition="rev"),
+    _Column("Age (d)", "age_days", condition="age_days"),
+    _Column("Error", "error", condition="_has_error"),
+]
+
+
+def _format_cell(value: object, fmt: str) -> str:
+    """Format a single cell value according to the format hint."""
+    if fmt == "signed" and isinstance(value, (int, float)):
+        return f"{value:+d}"
+    if fmt == "short_rev" and isinstance(value, str) and len(value) > 12:
+        return value[:12]
+    return "-" if value is None else str(value)
+
+
+def _should_show(
+    col: _Column, results: List[Mapping[str, object]], *, verbose: bool = False
+) -> bool:
+    """Decide whether *col* should appear for the given *results*.
+
+    A column is shown when at least one row has a non‑empty value for the
+    condition key, **or** when *verbose* is ``True`` and the column is
+    optional (i.e. has a ``condition``).
+    """
+    cond = col.condition
+    if cond is None:
+        # Base columns are always shown.
+        return True
+    if cond == "_has_error":
+        return verbose or any(not r.get("ok") for r in results)
+    return verbose or any(r.get(cond) is not None for r in results)
+
+
+def _cell_value(result: Mapping[str, object], col: _Column) -> str:
+    """Extract and format the cell value from a single result row."""
+    if col.key == "_status":
+        return "OK" if result.get("ok") else "FAIL"
+    return _format_cell(result.get(col.key), col.fmt)
+
+
+def _cell_value_rich(result: Mapping[str, object], col: _Column) -> str:
+    """Like :func:`_cell_value` but uses Rich‑style symbols."""
+    if col.key == "_status":
+        return "✅" if result.get("ok") else "❌"
+    return _format_cell(result.get(col.key), col.fmt)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def format_table(
+    results: Iterable[Mapping[str, object]],
+    columns: Sequence[_Column],
+    *,
+    verbose: bool = False,
+) -> str:
+    """Render *results* as a human‑readable table string.
+
+    Uses Rich when available, otherwise falls back to plain text.
+    This is the low‑level rendering function used by the command‑specific
+    wrappers below.
     """
     Table, Console = _try_import_rich()
-    results = list(results)  # materialise for width calculations / iteration
+    results = list(results)
 
-    # Determine column set – always include ``Input`` and ``Status``.
-    base_cols = ["Input", "Status"]
-    extra_cols = []
-    if any(r.get("rev") for r in results):
-        extra_cols.append("Rev")
-    if any(r.get("age_days") is not None for r in results):
-        extra_cols.append("Age (d)")
-    if any(r.get("deviation") is not None for r in results):
-        extra_cols.append("Deviation")
-    # Always show Error column when there are failures or verbose is set.
-    if verbose or any(not r.get("ok") for r in results):
-        extra_cols.append("Error")
+    if not results:
+        return "(no results)"
 
-    headers = base_cols + extra_cols
+    visible = [c for c in columns if _should_show(c, results, verbose=verbose)]
 
-    if Table:  # Rich available
+    if Table is not None:
         table = Table(show_header=True, header_style="bold cyan")
-        for h in headers:
-            table.add_column(h)
+        for col in visible:
+            table.add_column(col.header)
         for r in results:
-            status = "✅" if r.get("ok") else "❌"
-            row = [r.get("input", ""), status]
-            if "Rev" in extra_cols:
-                row.append(str(r.get("rev", "-")))
-            if "Age (d)" in extra_cols:
-                row.append(str(r.get("age_days", "-")))
-            if "Deviation" in extra_cols:
-                dev = r.get("deviation")
-                row.append(f"{dev:+d}" if isinstance(dev, (int, float)) else "-")
-            if "Error" in extra_cols:
-                row.append(str(r.get("error", "")))
+            row = [_cell_value_rich(r, col) for col in visible]
             table.add_row(*row)
-        from rich.console import Console
         from io import StringIO
 
         sio = StringIO()
@@ -96,26 +155,60 @@ def format_results(
         console.print(table)
         return sio.getvalue()
 
-    # Plain‑text fallback – compute column widths
-    col_widths = [
-        max(len(h), max(len(str(r.get(k.lower(), "-"))) for r in results))
-        for h, k in zip(headers, headers)
-    ]
-    # Ensure a minimum width for readability
-    col_widths = [max(w, 8) for w in col_widths]
-    lines = [_plain_row(headers, col_widths)]
-    lines.append("-" * (sum(col_widths) + 2 * (len(col_widths) - 1)))
+    # Plain‑text fallback
+    sample_rows: List[List[str]] = []
     for r in results:
-        status = "OK" if r.get("ok") else "FAIL"
-        row_vals = [str(r.get("input", "")), status]
-        if "Rev" in extra_cols:
-            row_vals.append(str(r.get("rev", "-")))
-        if "Age (d)" in extra_cols:
-            row_vals.append(str(r.get("age_days", "-")))
-        if "Deviation" in extra_cols:
-            dev = r.get("deviation")
-            row_vals.append(f"{dev:+d}" if isinstance(dev, (int, float)) else "-")
-        if "Error" in extra_cols:
-            row_vals.append(str(r.get("error", "")))
-        lines.append(_plain_row(row_vals, col_widths))
+        sample_rows.append([_cell_value(r, col) for col in visible])
+    header_texts = [col.header for col in visible]
+    # Compute column widths from header + data
+    col_widths: List[int] = []
+    for idx, hdr in enumerate(header_texts):
+        data_max = max((len(row[idx]) for row in sample_rows), default=0)
+        col_widths.append(max(len(hdr), data_max, 8))
+    lines: List[str] = []
+    lines.append(_plain_row(header_texts, col_widths))
+    lines.append("-" * (sum(col_widths) + 2 * (len(col_widths) - 1)))
+    for row in sample_rows:
+        lines.append(_plain_row(row, col_widths))
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Legacy function (backward compatibility)
+# ---------------------------------------------------------------------------
+
+
+def format_results(
+    results: Iterable[Mapping[str, object]], verbose: bool = False
+) -> str:
+    """Format verification results (legacy API).
+
+    This function is kept for backward compatibility with existing code.
+    Prefer :func:`format_verify_results` for new code.
+    """
+    return format_table(results, _VERIFY_COLUMNS, verbose=verbose)
+
+
+# ---------------------------------------------------------------------------
+# Command‑specific wrappers
+# ---------------------------------------------------------------------------
+
+
+def format_verify_results(
+    results: Iterable[Mapping[str, object]], *, verbose: bool = False
+) -> str:
+    """Format verification results (verify command).
+
+    Columns: Input | Status | Rev | Age (d) | Deviation | Error
+    """
+    return format_table(results, _VERIFY_COLUMNS, verbose=verbose)
+
+
+def format_update_results(
+    results: Iterable[Mapping[str, object]], *, verbose: bool = False
+) -> str:
+    """Format update results (update command).
+
+    Columns: Input | Status | Current Rev | New Rev | Age (d) | Error
+    """
+    return format_table(results, _UPDATE_COLUMNS, verbose=verbose)
