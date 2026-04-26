@@ -1,6 +1,21 @@
 # nix-flake-age-filter
 
-**Repository Overview**
+## Quickstart
+
+Run directly via `nix run` with these verified commands (tested against the actual repository):
+
+```bash
+# Verify all inputs are at least 30 days old
+nix run . -- verify --min-age 30 flake.lock
+
+# Update inputs older than 30 days
+nix run . -- update --min-age 30 flake.lock
+
+# Update inputs older than 30 days (dry-run, no modifications)
+nix run . -- update --min-age 30 --dry-run flake.lock
+```
+
+## Repository Overview
 
 This repository provides a pure‑Python implementation of a *minimum release‑age* filter for Nix flake inputs. The tool validates that each input in `flake.lock` is older than a configurable number of days and can automatically downgrade inputs that are too recent. It is packaged as a standard Python library with a Typer‑based CLI (`nix-flake-age`).
 
@@ -8,12 +23,23 @@ The legacy entry points `nix_flake_age_filter.py`, `nix_flake_age_update.py` and
 
 A lightweight CLI tool that enforces a **minimum commit age** on Nix flake inputs, similar to npm's `min-release-age`. It works with plain Git (no auth tokens) and can be used both as a library and as a command‑line utility.
 
+## Motivation
+
+Nix flakes pin dependencies via Git commits, but recent commits can still be malicious. This tool borrows npm's `min-release-age` concept (npm v11.10.0, pnpm, Yarn, Bun) to add a time-based safety gate.
+
+Most supply chain attacks are caught within days. By enforcing a minimum age (e.g., 30 days), you create a cooling-off period that lets the community flag malicious releases before they reach your build.
+
+Two subcommands: `verify` checks all inputs meet the threshold; `update` refreshes inputs while skipping fresh commits.
+
 ## Features
 
 - **Verify** that every input in `flake.lock` is at least *N* days old.
 - **Update** inputs while skipping those newer than the threshold.
+- **Multiple Git backends**: subprocess (default), pygit2, GitHub API, or auto‑selection.
 - Pure‑Python core with full type hints; optional `rich` for pretty tables.
 - Typer‑based CLI with sub‑commands `verify` and `update`.
+- Parallel execution for faster batch processing (`--parallel`).
+- JSON output for automation pipelines (`--json`).
 - Comprehensive unit‑test suite (`tests/`).
 
 ## Installation
@@ -21,12 +47,6 @@ A lightweight CLI tool that enforces a **minimum commit age** on Nix flake input
 ```bash
 # Recommended: use the Nix development shell
 nix develop   # enters a devShell with all dependencies (including pytest)
-```
-
-Or install via pip after building the package:
-
-```bash
-pip install .
 ```
 
 ## Usage
@@ -61,16 +81,6 @@ nix-flake-age verify --min-age 30 --json flake.lock
 # Enter the development environment (Nix shell)
 # This provides all dependencies, including pytest
 nix develop
-
-# Run the full test suite using pytest (recommended)
-python -m pytest -q
-```
-
-### Lint & type checking
-
-```bash
-ruff check src tests
-mypy src
 ```
 
 ### Continuous Integration
