@@ -51,21 +51,32 @@ class ResolveRefError(GitOperationError):
 # Global backend instance (lazy initialized)
 _backend: Optional[GitBackend] = None
 _backend_name: str = "auto"
+_backend_token: Optional[str] = None
+_backend_verbose: bool = False
 
 
-def set_backend(name: str, **kwargs) -> None:
+def set_backend(name: str, token: Optional[str] = None, verbose: bool = False, **kwargs) -> None:
     """Set the global backend by name.
     
     Args:
         name: Backend name ("subprocess", "pygit2", "github", "auto").
+        token: Optional GitHub token for higher rate limits (GitHub backend only).
+        verbose: If True, log rate limit info to stderr (GitHub backend only).
         **kwargs: Additional arguments for backend constructor.
     """
-    global _backend, _backend_name
+    global _backend, _backend_name, _backend_token, _backend_verbose
     _backend_name = name
+    _backend_token = token
+    _backend_verbose = verbose
     if name == "auto":
         _backend = None  # Will be lazily initialized
     else:
-        _backend = get_backend(name, **kwargs)
+        backend_kwargs = {**kwargs}
+        if token is not None:
+            backend_kwargs["token"] = token
+        if verbose:
+            backend_kwargs["verbose"] = verbose
+        _backend = get_backend(name, **backend_kwargs)
 
 
 def get_current_backend() -> GitBackend:
@@ -76,7 +87,7 @@ def get_current_backend() -> GitBackend:
     """
     global _backend
     if _backend is None:
-        _backend = get_auto_backend()
+        _backend = get_auto_backend(token=_backend_token, verbose=_backend_verbose)
     return _backend
 
 
@@ -126,14 +137,14 @@ def get_commit_timestamp(
         Dict with keys: ok, timestamp, error, rev
     """
     if method == "auto":
-        backend = get_auto_backend(timeout=timeout)
+        backend = get_auto_backend(timeout=timeout, token=_backend_token, verbose=_backend_verbose)
     else:
         try:
-            backend = get_backend(method, timeout=timeout)
+            backend = get_backend(method, timeout=timeout, token=_backend_token, verbose=_backend_verbose)
         except ValueError as e:
             # Method not found, fall back to subprocess (not auto) to respect user intent
             print(f"Warning: Unknown method '{method}', falling back to subprocess: {e}", file=sys.stderr)
-            backend = get_backend("subprocess", timeout=timeout)
+            backend = get_backend("subprocess", timeout=timeout, token=_backend_token, verbose=_backend_verbose)
     return backend.get_commit_timestamp(git_url, ref, timeout=timeout)
 
 
@@ -153,7 +164,7 @@ def get_github_default_branch(
         Default branch name or None if not available
     """
     try:
-        backend = get_backend("github", timeout=timeout)
+        backend = get_backend("github", timeout=timeout, token=_backend_token, verbose=_backend_verbose)
         git_url = f"https://github.com/{owner}/{repo}.git"
         return backend.resolve_default_ref(git_url, timeout=timeout)
     except Exception:
@@ -178,14 +189,14 @@ def resolve_default_ref(
         Resolved ref name
     """
     if method == "auto":
-        backend = get_auto_backend(timeout=timeout)
+        backend = get_auto_backend(timeout=timeout, token=_backend_token, verbose=_backend_verbose)
     else:
         try:
-            backend = get_backend(method, timeout=timeout)
+            backend = get_backend(method, timeout=timeout, token=_backend_token, verbose=_backend_verbose)
         except ValueError:
             # Fall back to subprocess to respect user intent of avoiding GitHub API
             print(f"Warning: Unknown method '{method}', falling back to subprocess", file=sys.stderr)
-            backend = get_backend("subprocess", timeout=timeout)
+            backend = get_backend("subprocess", timeout=timeout, token=_backend_token, verbose=_backend_verbose)
     return backend.resolve_default_ref(git_url, ref, timeout=timeout)
 
 
@@ -218,14 +229,14 @@ def find_oldest_commit_meeting_age(
     """
     # Select backend based on method
     if method == "auto":
-        backend = get_auto_backend(timeout=timeout)
+        backend = get_auto_backend(timeout=timeout, token=_backend_token, verbose=_backend_verbose)
     else:
         try:
-            backend = get_backend(method, timeout=timeout)
+            backend = get_backend(method, timeout=timeout, token=_backend_token, verbose=_backend_verbose)
         except ValueError:
             # Fall back to subprocess to respect user intent of avoiding GitHub API
             print(f"Warning: Unknown method '{method}', falling back to subprocess", file=sys.stderr)
-            backend = get_backend("subprocess", timeout=timeout)
+            backend = get_backend("subprocess", timeout=timeout, token=_backend_token, verbose=_backend_verbose)
     
     if verbose:
         print(f"[DEBUG] Finding commit for {git_url} (ref={ref}, min_age={min_age_days}d)", file=sys.stderr)

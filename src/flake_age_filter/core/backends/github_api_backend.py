@@ -2,10 +2,19 @@
 
 Uses GitHub REST API for fast operations on GitHub repositories.
 Provides the fastest method for GitHub-hosted repos.
+
+Supports authentication via:
+- GITHUB_TOKEN environment variable
+- GH_TOKEN environment variable  
+- `gh auth token` CLI command (fallback when no env vars set)
+- Explicit token parameter
 """
 
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
 import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
@@ -36,6 +45,53 @@ def _get_requests():
     return _requests
 
 
+def _get_token_from_gh_cli() -> Optional[str]:
+    """Get GitHub token from `gh auth token` CLI command.
+    
+    Uses `gh auth token` which outputs the authentication token for the
+    active account on the default GitHub host.
+    
+    Returns:
+        Token string if found, None if gh is not installed or not authenticated.
+    """
+    gh_path = shutil.which("gh")
+    if gh_path is None:
+        return None
+    
+    try:
+        result = subprocess.run(
+            [gh_path, "auth", "token"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            token = result.stdout.strip()
+            if token:
+                return token
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+    
+    return None
+
+
+def _get_github_token_from_env() -> Optional[str]:
+    """Get GitHub token from environment variables or gh CLI fallback.
+    
+    Resolution order:
+    1. GITHUB_TOKEN environment variable
+    2. GH_TOKEN environment variable (GitHub CLI convention)
+    3. `gh auth token` CLI command (if gh is installed and authenticated)
+    
+    Returns:
+        Token string if found, None otherwise.
+    """
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        return token
+    return _get_token_from_gh_cli()
+
+
 _GITHUB_HEADERS = {
     "Accept": "application/vnd.github+json",
     "User-Agent": "nix-flake-age-filter/1.0",
@@ -48,20 +104,33 @@ class GitHubAPIBackend(GitBackend):
     
     This backend only works for GitHub repositories.
     For other hosts, it will fail with an error.
+    
+    Authentication:
+    - Token can be passed explicitly via constructor
+    - Automatically reads from GITHUB_TOKEN or GH_TOKEN env vars
+    - Authenticated requests have 5000 req/hour vs 60 req/hour
     """
     
     name = "github"
     
-    def __init__(self, timeout: int = 120, token: Optional[str] = None):
+    def __init__(self, timeout: int = 120, token: Optional[str] = None, verbose: bool = False):
         """Initialize the GitHub API backend.
         
         Args:
             timeout: Default timeout for operations.
             token: Optional GitHub token for higher rate limits.
+                   If None, reads from GITHUB_TOKEN or GH_TOKEN env vars.
+            verbose: If True, log rate limit info to stderr.
         """
         super().__init__(timeout=timeout)
-        self._token = token
+        # Use provided token, or read from environment
+        self._token = token if token is not None else _get_github_token_from_env()
         self._available: Optional[bool] = None
+        self._verbose = verbose
+        # Rate limit info (populated from API response headers)
+        self._rate_limit_remaining: Optional[int] = None
+        self._rate_limit_limit: Optional[int] = None
+        self._rate_limit_reset: Optional[int] = None
     
     def is_available(self) -> bool:
         """Check if requests is available."""
@@ -71,12 +140,54 @@ class GitHubAPIBackend(GitBackend):
         return self._available
     
     @property
+    def has_token(self) -> bool:
+        """Check if a token is configured."""
+        return bool(self._token)
+    
+    @property
     def headers(self) -> Dict[str, str]:
         """Get headers for GitHub API requests."""
         headers = _GITHUB_HEADERS.copy()
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
         return headers
+    
+    def _update_rate_limit_info(self, resp) -> None:
+        """Update rate limit info from response headers.
+        
+        GitHub API returns rate limit in response headers:
+        - X-RateLimit-Limit: Maximum requests per hour
+        - X-RateLimit-Remaining: Remaining requests
+        - X-RateLimit-Reset: Unix timestamp when limit resets
+        """
+        try:
+            remaining = resp.headers.get("X-RateLimit-Remaining")
+            limit = resp.headers.get("X-RateLimit-Limit")
+            reset = resp.headers.get("X-RateLimit-Reset")
+            
+            if remaining:
+                self._rate_limit_remaining = int(remaining)
+            if limit:
+                self._rate_limit_limit = int(limit)
+            if reset:
+                self._rate_limit_reset = int(reset)
+        except (ValueError, TypeError):
+            pass
+    
+    def get_rate_limit_info(self) -> Dict[str, Any]:
+        """Get current rate limit information.
+        
+        Returns:
+            Dict with 'limit', 'remaining', 'reset' keys, or None if not available.
+        """
+        return {
+            "limit": self._rate_limit_limit,
+            "remaining": self._rate_limit_remaining,
+            "reset": self._rate_limit_reset,
+            "reset_time": datetime.fromtimestamp(self._rate_limit_reset, tz=timezone.utc).isoformat()
+                if self._rate_limit_reset else None,
+            "has_token": self.has_token,
+        }
     
     def _get_owner_repo(self, git_url: str) -> Tuple[str, str]:
         """Extract owner and repo from GitHub URL.
@@ -112,8 +223,31 @@ class GitHubAPIBackend(GitBackend):
                 timeout=timeout or self.timeout,
             )
             
+            # Update rate limit info from headers
+            self._update_rate_limit_info(resp)
+            
+            # Log rate limit info if verbose
+            if self._verbose and self._rate_limit_remaining is not None:
+                reset_time_str = ""
+                if self._rate_limit_reset:
+                    reset_dt = datetime.fromtimestamp(self._rate_limit_reset, tz=timezone.utc)
+                    reset_time_str = f" (resets {reset_dt.strftime('%Y-%m-%d %H:%M UTC')})"
+                auth_status = "authenticated" if self.has_token else "unauthenticated"
+                print(
+                    f"[GitHub API] Rate limit: {self._rate_limit_remaining}/{self._rate_limit_limit} remaining [{auth_status}]{reset_time_str}",
+                    file=sys.stderr
+                )
+            
             if resp.status_code == 403:
-                raise RateLimitError("GitHub API rate limited (403)")
+                # Include rate limit info in error message
+                reset_info = ""
+                if self._rate_limit_reset:
+                    reset_dt = datetime.fromtimestamp(self._rate_limit_reset, tz=timezone.utc)
+                    reset_info = f" (resets at {reset_dt.strftime('%Y-%m-%d %H:%M UTC')})"
+                auth_hint = " Set GITHUB_TOKEN or GH_TOKEN environment variable for 5000 req/hour." if not self.has_token else ""
+                raise RateLimitError(
+                    f"GitHub API rate limit exceeded. {self._rate_limit_remaining or 0}/{self._rate_limit_limit or '?'} requests remaining{reset_info}{auth_hint}"
+                )
             
             if resp.status_code == 200:
                 return 200, resp.json()

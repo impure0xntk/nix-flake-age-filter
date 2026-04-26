@@ -8,8 +8,9 @@ modules (`core.lock_file`, `core.git_ops`, `core.age_check`).
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import typer
 
@@ -88,6 +89,17 @@ def _process_input(
     return result
 
 
+def _get_token_from_env() -> Optional[str]:
+    """Get GitHub token from environment.
+    
+    Checks GITHUB_TOKEN and GH_TOKEN environment variables.
+    
+    Returns:
+        Token string or None if not set.
+    """
+    return os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+
+
 @app.command()
 def verify(
     min_age: int = typer.Option(..., "--min-age", help="Minimum age in days"),
@@ -110,6 +122,12 @@ def verify(
         "--method",
         help=f"Commit search method: {', '.join(list_backends())}, or auto",
     ),
+    github_token: Optional[str] = typer.Option(
+        None,
+        "--github-token",
+        help="GitHub token for higher API rate limits (or set GITHUB_TOKEN/GH_TOKEN env var)",
+        envvar="GITHUB_TOKEN",
+    ),
 ):
     """Validate that each flake input is at least ``min_age`` days old.
 
@@ -128,6 +146,36 @@ def verify(
             msg += f"\nDid you mean: '{suggestions[0]}'?"
         typer.secho(msg, fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
+
+    # Set up backend with token if provided
+    token = github_token or _get_token_from_env()
+    if token or verbose:
+        set_backend(method, token=token, verbose=verbose)
+    else:
+        set_backend(method)
+
+    # Show rate limit info for GitHub backend
+    if verbose and method in ("github", "auto"):
+        backend = git_ops.get_current_backend()
+        if hasattr(backend, "get_rate_limit_info"):
+            rate_info = backend.get_rate_limit_info()
+            if rate_info:
+                typer.secho(
+                    f"GitHub API Rate Limit: {rate_info.get('remaining', '?')} remaining, "
+                    f"resets at {rate_info.get('reset_time', '?')}",
+                    fg=typer.colors.CYAN,
+                )
+            elif token:
+                typer.secho(
+                    "GitHub API: Using authenticated requests (5,000 req/hour)",
+                    fg=typer.colors.CYAN,
+                )
+            else:
+                typer.secho(
+                    "GitHub API: Using unauthenticated requests (60 req/hour). "
+                    "Set GITHUB_TOKEN for higher limits.",
+                    fg=typer.colors.YELLOW,
+                )
 
     try:
         inputs_all = read_flake_inputs(flake_lock)

@@ -258,11 +258,18 @@ class SubprocessGitBackend(GitBackend):
         max_depth: int = 3000,
         timeout: Optional[int] = None,
         now: Optional[datetime] = None,
+        now_ts: Optional[int] = None,
         verbose: bool = False,
         **kwargs,
     ) -> Dict[str, Any]:
         """Find the oldest commit meeting minimum age requirement."""
-        now_ts = int((now or datetime.now(timezone.utc)).timestamp())
+        # 優先順位: now_ts > now > 実際の現在時刻
+        if now_ts is not None:
+            now_ts = int(now_ts)
+        elif now is not None:
+            now_ts = int(now.timestamp())
+        else:
+            now_ts = int(datetime.now(timezone.utc).timestamp())
         cutoff_ts = now_ts - min_age_days * 86_400
         
         resolved_ref = ref or self.resolve_default_ref(git_url, timeout=timeout)

@@ -7,13 +7,15 @@ uses the new core modules and Typer for a clean sub‑command interface.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import typer
 
 from ..core.lock_file import read_flake_inputs
 from ..core import git_ops, list_backends
+from ..core.git_ops import set_backend
 
 from ..core.models import FlakeInput
 from ..core.errors import FlakeAgeError
@@ -40,6 +42,17 @@ def git_env_no_prompt():
 app = typer.Typer(
     help="Update flake inputs, ensuring each commit is at least a given age."
 )
+
+
+def _get_token_from_env() -> Optional[str]:
+    """Get GitHub token from environment.
+    
+    Checks GITHUB_TOKEN and GH_TOKEN environment variables.
+    
+    Returns:
+        Token string or None if not set.
+    """
+    return os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
 
 
 def _choose_rev(
@@ -118,6 +131,12 @@ def update(
         "--method",
         help=f"Commit search method: {', '.join(list_backends())}, or auto",
     ),
+    github_token: Optional[str] = typer.Option(
+        None,
+        "--github-token",
+        help="GitHub token for higher API rate limits (or set GITHUB_TOKEN/GH_TOKEN env var)",
+        envvar="GITHUB_TOKEN",
+    ),
 ):
     """Update flake inputs that are older than ``min_age`` days.
 
@@ -125,6 +144,47 @@ def update(
     constructed and passed to ``nix flake update``.  When ``--dry-run`` is set the
     command is not executed – only the generated overrides are printed.
     """
+    # Validate method parameter early
+    valid_methods = ["auto"] + list_backends()
+    if method not in valid_methods:
+        import difflib
+        suggestions = difflib.get_close_matches(method, valid_methods, n=1, cutoff=0.6)
+        msg = f"Error: Invalid method '{method}'. Valid methods: {', '.join(valid_methods)}"
+        if suggestions:
+            msg += f"\nDid you mean: '{suggestions[0]}'?"
+        typer.secho(msg, fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+    # Set up backend with token if provided
+    token = github_token or _get_token_from_env()
+    if token or verbose:
+        set_backend(method, token=token, verbose=verbose)
+    else:
+        set_backend(method)
+
+    # Show rate limit info for GitHub backend
+    if verbose and method in ("github", "auto"):
+        backend = git_ops.get_current_backend()
+        if hasattr(backend, "get_rate_limit_info"):
+            rate_info = backend.get_rate_limit_info()
+            if rate_info:
+                typer.secho(
+                    f"GitHub API Rate Limit: {rate_info.get('remaining', '?')} remaining, "
+                    f"resets at {rate_info.get('reset_time', '?')}",
+                    fg=typer.colors.CYAN,
+                )
+            elif token:
+                typer.secho(
+                    "GitHub API: Using authenticated requests (5,000 req/hour)",
+                    fg=typer.colors.CYAN,
+                )
+            else:
+                typer.secho(
+                    "GitHub API: Using unauthenticated requests (60 req/hour). "
+                    "Set GITHUB_TOKEN for higher limits.",
+                    fg=typer.colors.YELLOW,
+                )
+
     try:
         inputs_all = read_flake_inputs(flake_lock)
     except FlakeAgeError as exc:

@@ -18,7 +18,7 @@ Usage:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from .base import (
     GitBackend,
@@ -65,7 +65,7 @@ __all__ = [
 ]
 
 
-def get_auto_backend(timeout: int = 120, **kwargs) -> GitBackend:
+def get_auto_backend(timeout: int = 120, token: Optional[str] = None, verbose: bool = False, **kwargs) -> GitBackend:
     """Get the best available backend automatically.
     
     Selection order:
@@ -75,14 +75,25 @@ def get_auto_backend(timeout: int = 120, **kwargs) -> GitBackend:
     
     Args:
         timeout: Default timeout for operations.
+        token: Optional GitHub token for higher rate limits (GitHub backend only).
+        verbose: If True, log rate limit info to stderr (GitHub backend only).
         **kwargs: Additional arguments for backend.
         
     Returns:
         Backend instance.
     """
+    from typing import Optional as _Optional
+    
+    # Build kwargs for GitHub backend
+    github_kwargs = {**kwargs}
+    if token is not None:
+        github_kwargs["token"] = token
+    if verbose:
+        github_kwargs["verbose"] = verbose
+    
     # Try GitHub API first (fastest for GitHub repos)
     try:
-        backend = get_backend("github", timeout=timeout, **kwargs)
+        backend = get_backend("github", timeout=timeout, **github_kwargs)
         if backend.is_available():
             return backend
     except (ValueError, ImportError):
