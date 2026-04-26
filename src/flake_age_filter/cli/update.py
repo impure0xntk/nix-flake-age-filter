@@ -35,13 +35,16 @@ def run_cmd(cmd: list, env_overrides: dict | None = None, timeout: int = 300):
     env["GIT_TERMINAL_PROMPT"] = "0"
     if env_overrides:
         env.update(env_overrides)
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, timeout=timeout, env=env
+    )
     return result.returncode, result.stdout, result.stderr
 
 
 def git_env_no_prompt():
     """Return environment variables to disable git prompts."""
     return {"GIT_TERMINAL_PROMPT": "0"}
+
 
 app = typer.Typer(
     help="Update flake inputs, ensuring each commit is at least a given age."
@@ -180,7 +183,9 @@ def update(
     from ..core.parallel import execute_parallel
 
     def _process_update_inp(inp: FlakeInput) -> dict | None:
-        return _choose_rev(inp, min_age, timeout, method=method, now_ts=now_ts, verbose=verbose)
+        return _choose_rev(
+            inp, min_age, timeout, method=method, now_ts=now_ts, verbose=verbose
+        )
 
     processed = execute_parallel(inputs_all, _process_update_inp, parallel)
     for inp, res in processed:
@@ -247,9 +252,7 @@ def update(
         cmd.extend(["--override-input", name, url])
     typer.secho(f"Running: {' '.join(cmd)}", fg=typer.colors.BLUE)
     # Use a longer timeout for nix flake update (default 60s may be too short)
-    rc, out, err = run_cmd(
-        cmd, env_overrides=git_env_no_prompt(), timeout=timeout * 2
-    )
+    rc, out, err = run_cmd(cmd, env_overrides=git_env_no_prompt(), timeout=timeout * 2)
     if rc != 0:
         typer.echo(err or out, err=True)
         raise typer.Exit(code=rc if rc > 0 else 1)

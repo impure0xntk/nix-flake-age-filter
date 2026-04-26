@@ -4,7 +4,6 @@ We mock the _run_git method to simulate git log output and verify
 that the backend correctly returns the NEWEST commit meeting the age requirement.
 """
 
-import pytest
 from datetime import datetime, timezone
 
 from flake_age_filter.core.backends.subprocess_backend import SubprocessGitBackend
@@ -14,7 +13,8 @@ class FakeBackend(SubprocessGitBackend):
     """Backend that records calls instead of actually running git."""
 
     def __init__(self):
-        # Skip parent __init__ (no need for real git)
+        # Initialize parent to set up required attributes like _verbose
+        super().__init__()
         self.calls = []
 
     def _run_git(self, args, cwd=None, timeout=None):
@@ -134,7 +134,10 @@ def test_returns_none_when_no_commit_old_enough():
 
     assert result["ok"] is False
     assert result["rev"] is None
-    assert "older than" in result["error"].lower() or "no commit" in result["error"].lower()
+    assert (
+        "older than" in result["error"].lower()
+        or "no commit" in result["error"].lower()
+    )
 
 
 def test_returns_newest_when_only_one_commit_qualifies():
@@ -171,12 +174,18 @@ def test_stops_iteration_when_found():
             calls.append(("run_git", args, cwd, timeout))
             if "log" in args:
                 # oldest first; when reversed, newest first
-                return 0, "\n".join([
-                    commit_line("oldest", 30),
-                    commit_line("middle", 20),
-                    commit_line("newest_qualifying", 15),
-                    commit_line("too_new", 5),
-                ]), ""
+                return (
+                    0,
+                    "\n".join(
+                        [
+                            commit_line("oldest", 30),
+                            commit_line("middle", 20),
+                            commit_line("newest_qualifying", 15),
+                            commit_line("too_new", 5),
+                        ]
+                    ),
+                    "",
+                )
             if "rev-list" in args:
                 return 0, "100\n", ""
             return 0, "", ""

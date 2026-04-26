@@ -14,11 +14,12 @@ from typing import Any, Dict, Optional, Tuple
 @dataclass(frozen=True)
 class CommitInfo:
     """Information about a Git commit."""
+
     sha: str
     timestamp: int  # Unix epoch seconds (UTC)
     message: Optional[str] = None
     author: Optional[str] = None
-    
+
     @property
     def date_str(self) -> str:
         """Return formatted date string."""
@@ -29,6 +30,7 @@ class CommitInfo:
 @dataclass(frozen=True)
 class RefInfo:
     """Information about a Git reference (branch/tag)."""
+
     name: str
     sha: str
     is_branch: bool = False
@@ -37,54 +39,59 @@ class RefInfo:
 
 class GitBackendError(Exception):
     """Base exception for Git backend errors."""
+
     pass
 
 
 class GitNotFoundError(GitBackendError):
     """Git executable or library not found."""
+
     pass
 
 
 class FetchError(GitBackendError):
     """Error during git fetch operation."""
+
     pass
 
 
 class ResolveRefError(GitBackendError):
     """Error resolving a Git reference."""
+
     pass
 
 
 class RateLimitError(GitBackendError):
     """API rate limit exceeded."""
+
     pass
 
 
 class GitBackend(ABC):
     """Abstract base class for Git operation backends.
-    
+
     All backends must implement this interface to be used polymorphically.
     The backend provides methods for:
     - Resolving references (branches, tags)
     - Fetching commit information
     - Finding commits by age criteria
     """
-    
+
     # Backend name for registration and CLI selection
     name: str = "base"
-    
+
     def __init__(self, timeout: int = 120):
         """Initialize the backend.
-        
+
         Args:
             timeout: Default timeout for network operations in seconds.
         """
         self.timeout = timeout
-    
+
     # ---------------------------------------------------------------------
     # Core operations (must be implemented by all backends)
     # ---------------------------------------------------------------------
-    
+
     @abstractmethod
     def get_commit_timestamp(
         self,
@@ -93,12 +100,12 @@ class GitBackend(ABC):
         timeout: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Get the timestamp for a specific commit.
-        
+
         Args:
             git_url: Git repository URL.
             rev: Commit SHA, branch, or tag.
             timeout: Optional timeout override.
-            
+
         Returns:
             Dict with keys:
                 - ok: bool
@@ -107,7 +114,7 @@ class GitBackend(ABC):
                 - error: str if not ok
         """
         pass
-    
+
     @abstractmethod
     def resolve_default_ref(
         self,
@@ -116,20 +123,20 @@ class GitBackend(ABC):
         timeout: Optional[int] = None,
     ) -> str:
         """Resolve the default reference for a repository.
-        
+
         Args:
             git_url: Git repository URL.
             ref: Optional explicit ref to resolve.
             timeout: Optional timeout override.
-            
+
         Returns:
             Resolved ref name (e.g., "main", "master", or the provided ref).
-            
+
         Raises:
             ResolveRefError: If the reference cannot be resolved.
         """
         pass
-    
+
     @abstractmethod
     def find_oldest_commit_meeting_age(
         self,
@@ -144,7 +151,7 @@ class GitBackend(ABC):
         **kwargs,
     ) -> Dict[str, Any]:
         """Find the oldest commit meeting minimum age requirement.
-        
+
         Args:
             git_url: Git repository URL.
             ref: Branch or tag name (None for HEAD).
@@ -153,7 +160,7 @@ class GitBackend(ABC):
             max_depth: Maximum fetch depth.
             timeout: Optional timeout override.
             now: Override current time for reproducible checks.
-            
+
         Returns:
             Dict with keys:
                 - ok: bool
@@ -167,22 +174,22 @@ class GitBackend(ABC):
                 - too_new_date: str | None
         """
         pass
-    
+
     # ---------------------------------------------------------------------
     # Optional operations (may be overridden for optimization)
     # ---------------------------------------------------------------------
-    
+
     def list_refs(
         self,
         git_url: str,
         timeout: Optional[int] = None,
     ) -> Dict[str, Any]:
         """List all references (branches and tags) in a repository.
-        
+
         Args:
             git_url: Git repository URL.
             timeout: Optional timeout override.
-            
+
         Returns:
             Dict with keys:
                 - ok: bool
@@ -194,33 +201,34 @@ class GitBackend(ABC):
             "refs": [],
             "error": "list_refs not implemented for this backend",
         }
-    
+
     def is_available(self) -> bool:
         """Check if this backend is available (dependencies installed).
-        
+
         Returns:
             True if the backend can be used, False otherwise.
         """
         return True
-    
+
     # ---------------------------------------------------------------------
     # Utility methods
     # ---------------------------------------------------------------------
-    
+
     @staticmethod
     def parse_github_url(git_url: str) -> Optional[Tuple[str, str]]:
         """Parse GitHub URL to extract owner and repo.
-        
+
         Args:
             git_url: Git URL (HTTPS or SSH).
-            
+
         Returns:
             Tuple of (owner, repo) if GitHub URL, None otherwise.
         """
         import re
+
         m = re.search(r"github\.com[:/]{1}([^/]+)/([^/]+?)(?:\.git)?$", git_url)
         return m.groups() if m else None
-    
+
     @staticmethod
     def env_no_prompt() -> Dict[str, str]:
         """Return environment variables to silence interactive prompts."""
@@ -231,11 +239,11 @@ class GitBackend(ABC):
             "GIT_CONFIG_KEY_0": "protocol.version",
             "GIT_CONFIG_VALUE_0": "2",
         }
-    
+
     @staticmethod
     def parse_github_date(date_str: str) -> Optional[int]:
         """Parse an ISO-8601 timestamp from the GitHub API into a Unix epoch.
-        
+
         Only UTC timestamps ending with ``Z`` are expected.
         """
         if not date_str or not date_str.endswith("Z"):

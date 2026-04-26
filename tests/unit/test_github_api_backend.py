@@ -4,7 +4,6 @@ We mock the _api_get method to simulate GitHub API responses and verify
 that the backend correctly returns the NEWEST commit meeting the age requirement.
 """
 
-import pytest
 from datetime import datetime, timezone
 from unittest import mock
 
@@ -135,7 +134,15 @@ def test_uses_resolved_ref():
     """Backend should use the resolved default ref when none provided."""
     backend = MockBackend(
         api_responses=[
-            (200, [{"sha": "abc123", "commit": {"committer": {"date": make_iso_from_days_ago(15)}}}] ),
+            (
+                200,
+                [
+                    {
+                        "sha": "abc123",
+                        "commit": {"committer": {"date": make_iso_from_days_ago(15)}},
+                    }
+                ],
+            ),
         ]
     )
     backend.resolve_default_ref = mock.MagicMock(return_value="main")
@@ -161,7 +168,10 @@ class TestTokenHandling:
 
     def test_no_token_by_default(self):
         """Backend should work without a token (unauthenticated)."""
-        with mock.patch("flake_age_filter.core.backends.github_api_backend._get_token_from_gh_cli", return_value=None):
+        with mock.patch(
+            "flake_age_filter.core.backends.github_api_backend._get_token_from_gh_cli",
+            return_value=None,
+        ):
             backend = GitHubAPIBackend()
             assert backend._token is None
 
@@ -185,13 +195,18 @@ class TestTokenHandling:
             mock_get.assert_called_once()
             call_kwargs = mock_get.call_args
             assert "Authorization" in call_kwargs.kwargs.get("headers", {})
-            assert call_kwargs.kwargs["headers"]["Authorization"] == "Bearer ghp_test123"
+            assert (
+                call_kwargs.kwargs["headers"]["Authorization"] == "Bearer ghp_test123"
+            )
 
     def test_no_auth_header_without_token(self):
         """When no token is set, no Authorization header should be sent."""
         import unittest.mock as mock
 
-        with mock.patch("flake_age_filter.core.backends.github_api_backend._get_token_from_gh_cli", return_value=None):
+        with mock.patch(
+            "flake_age_filter.core.backends.github_api_backend._get_token_from_gh_cli",
+            return_value=None,
+        ):
             backend = GitHubAPIBackend()
 
         mock_resp = mock.MagicMock()
@@ -239,7 +254,10 @@ class TestRateLimitInfo:
 
     def test_rate_limit_info_values_none_before_request(self):
         """Rate limit info values should be None before any API request."""
-        with mock.patch("flake_age_filter.core.backends.github_api_backend._get_token_from_gh_cli", return_value=None):
+        with mock.patch(
+            "flake_age_filter.core.backends.github_api_backend._get_token_from_gh_cli",
+            return_value=None,
+        ):
             backend = GitHubAPIBackend()
         info = backend.get_rate_limit_info()
         assert info["remaining"] is None
@@ -249,7 +267,6 @@ class TestRateLimitInfo:
 
     def test_rate_limit_error_includes_hint_without_token(self):
         """Rate limit error should suggest setting a token when none is configured."""
-        import unittest.mock as mock
 
         backend = GitHubAPIBackend(token=None)
 
@@ -277,21 +294,27 @@ class TestGetTokenFromEnv:
 
     def test_reads_github_token(self):
         """Should read GITHUB_TOKEN environment variable."""
-        from flake_age_filter.core.backends.github_api_backend import _get_github_token_from_env
+        from flake_age_filter.core.backends.github_api_backend import (
+            _get_github_token_from_env,
+        )
 
         with mock.patch.dict("os.environ", {"GITHUB_TOKEN": "ghp_abc123"}, clear=False):
             assert _get_github_token_from_env() == "ghp_abc123"
 
     def test_reads_gh_token(self):
         """Should read GH_TOKEN environment variable as fallback."""
-        from flake_age_filter.core.backends.github_api_backend import _get_github_token_from_env
+        from flake_age_filter.core.backends.github_api_backend import (
+            _get_github_token_from_env,
+        )
 
         with mock.patch.dict("os.environ", {"GH_TOKEN": "ghp_xyz789"}, clear=False):
             assert _get_github_token_from_env() == "ghp_xyz789"
 
     def test_github_token_takes_priority(self):
         """GITHUB_TOKEN should take priority over GH_TOKEN."""
-        from flake_age_filter.core.backends.github_api_backend import _get_github_token_from_env
+        from flake_age_filter.core.backends.github_api_backend import (
+            _get_github_token_from_env,
+        )
 
         with mock.patch.dict(
             "os.environ",
@@ -302,7 +325,9 @@ class TestGetTokenFromEnv:
 
     def test_returns_none_when_no_env_vars(self):
         """Should return None when no token env vars are set and gh not available."""
-        from flake_age_filter.core.backends.github_api_backend import _get_github_token_from_env
+        from flake_age_filter.core.backends.github_api_backend import (
+            _get_github_token_from_env,
+        )
 
         with mock.patch.dict("os.environ", {}, clear=True):
             with mock.patch("shutil.which", return_value=None):
@@ -310,7 +335,9 @@ class TestGetTokenFromEnv:
 
     def test_falls_back_to_gh_cli(self):
         """Should fall back to gh auth token when no env vars are set."""
-        from flake_age_filter.core.backends.github_api_backend import _get_github_token_from_env
+        from flake_age_filter.core.backends.github_api_backend import (
+            _get_github_token_from_env,
+        )
 
         mock_result = mock.MagicMock()
         mock_result.returncode = 0
@@ -323,10 +350,14 @@ class TestGetTokenFromEnv:
 
     def test_env_vars_take_priority_over_gh_cli(self):
         """Environment variables should take priority over gh CLI."""
-        from flake_age_filter.core.backends.github_api_backend import _get_github_token_from_env
+        from flake_age_filter.core.backends.github_api_backend import (
+            _get_github_token_from_env,
+        )
 
         with mock.patch.dict("os.environ", {"GH_TOKEN": "from_env"}, clear=False):
-            with mock.patch("flake_age_filter.core.backends.github_api_backend._get_token_from_gh_cli") as mock_gh:
+            with mock.patch(
+                "flake_age_filter.core.backends.github_api_backend._get_token_from_gh_cli"
+            ) as mock_gh:
                 assert _get_github_token_from_env() == "from_env"
                 mock_gh.assert_not_called()
 
@@ -336,7 +367,9 @@ class TestGetTokenFromGhCli:
 
     def test_returns_token_on_success(self):
         """Should return token when gh auth token succeeds."""
-        from flake_age_filter.core.backends.github_api_backend import _get_token_from_gh_cli
+        from flake_age_filter.core.backends.github_api_backend import (
+            _get_token_from_gh_cli,
+        )
 
         mock_result = mock.MagicMock()
         mock_result.returncode = 0
@@ -355,14 +388,18 @@ class TestGetTokenFromGhCli:
 
     def test_returns_none_when_gh_not_installed(self):
         """Should return None when gh CLI is not found."""
-        from flake_age_filter.core.backends.github_api_backend import _get_token_from_gh_cli
+        from flake_age_filter.core.backends.github_api_backend import (
+            _get_token_from_gh_cli,
+        )
 
         with mock.patch("shutil.which", return_value=None):
             assert _get_token_from_gh_cli() is None
 
     def test_returns_none_when_gh_auth_fails(self):
         """Should return None when gh auth token returns non-zero exit code."""
-        from flake_age_filter.core.backends.github_api_backend import _get_token_from_gh_cli
+        from flake_age_filter.core.backends.github_api_backend import (
+            _get_token_from_gh_cli,
+        )
 
         mock_result = mock.MagicMock()
         mock_result.returncode = 1
@@ -374,7 +411,9 @@ class TestGetTokenFromGhCli:
 
     def test_returns_none_when_gh_output_empty(self):
         """Should return None when gh auth token outputs empty string."""
-        from flake_age_filter.core.backends.github_api_backend import _get_token_from_gh_cli
+        from flake_age_filter.core.backends.github_api_backend import (
+            _get_token_from_gh_cli,
+        )
 
         mock_result = mock.MagicMock()
         mock_result.returncode = 0
@@ -387,15 +426,21 @@ class TestGetTokenFromGhCli:
     def test_returns_none_on_timeout(self):
         """Should return None when gh auth token times out."""
         import subprocess as sp
-        from flake_age_filter.core.backends.github_api_backend import _get_token_from_gh_cli
+        from flake_age_filter.core.backends.github_api_backend import (
+            _get_token_from_gh_cli,
+        )
 
         with mock.patch("shutil.which", return_value="/usr/bin/gh"):
-            with mock.patch("subprocess.run", side_effect=sp.TimeoutExpired(cmd="gh", timeout=10)):
+            with mock.patch(
+                "subprocess.run", side_effect=sp.TimeoutExpired(cmd="gh", timeout=10)
+            ):
                 assert _get_token_from_gh_cli() is None
 
     def test_returns_none_on_os_error(self):
         """Should return None when subprocess.run raises OSError."""
-        from flake_age_filter.core.backends.github_api_backend import _get_token_from_gh_cli
+        from flake_age_filter.core.backends.github_api_backend import (
+            _get_token_from_gh_cli,
+        )
 
         with mock.patch("shutil.which", return_value="/usr/bin/gh"):
             with mock.patch("subprocess.run", side_effect=OSError("permission denied")):
@@ -403,7 +448,9 @@ class TestGetTokenFromGhCli:
 
     def test_strips_whitespace(self):
         """Should strip leading/trailing whitespace from token."""
-        from flake_age_filter.core.backends.github_api_backend import _get_token_from_gh_cli
+        from flake_age_filter.core.backends.github_api_backend import (
+            _get_token_from_gh_cli,
+        )
 
         mock_result = mock.MagicMock()
         mock_result.returncode = 0

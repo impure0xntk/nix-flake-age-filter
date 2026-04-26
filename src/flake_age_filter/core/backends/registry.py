@@ -5,7 +5,7 @@ Provides a simple registry pattern for backend discovery and selection.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, Optional, Type
+from typing import TYPE_CHECKING, Dict, Type
 
 if TYPE_CHECKING:
     from .base import GitBackend
@@ -17,7 +17,7 @@ _backends: Dict[str, Type["GitBackend"]] = {}
 
 def register_backend(cls: Type["GitBackend"]) -> Type["GitBackend"]:
     """Decorator to register a backend class.
-    
+
     Usage:
         @register_backend
         class MyBackend(GitBackend):
@@ -35,32 +35,28 @@ def get_backend(
     **kwargs,
 ) -> "GitBackend":
     """Get a backend instance by name.
-    
+
     Args:
         name: Backend name ("subprocess", "pygit2", "github", "auto").
         timeout: Default timeout for operations.
         **kwargs: Additional arguments passed to backend constructor.
-        
+
     Returns:
         Backend instance.
-        
+
     Raises:
         ValueError: If backend not found or not available.
     """
     if name not in _backends:
         available = list_backends()
-        raise ValueError(
-            f"Unknown backend: {name!r}. Available: {available}"
-        )
-    
+        raise ValueError(f"Unknown backend: {name!r}. Available: {available}")
+
     backend_cls = _backends[name]
     instance = backend_cls(timeout=timeout, **kwargs)
-    
+
     if not instance.is_available():
-        raise ValueError(
-            f"Backend {name!r} is not available (missing dependencies)"
-        )
-    
+        raise ValueError(f"Backend {name!r} is not available (missing dependencies)")
+
     return instance
 
 

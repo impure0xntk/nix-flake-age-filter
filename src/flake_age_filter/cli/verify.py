@@ -15,7 +15,7 @@ from typing import Dict, List, Optional
 import typer
 
 from ..core import git_ops, list_backends
-from ..core.age_check import check_age, format_duration
+from ..core.age_check import check_age
 from ..core.errors import FlakeAgeError
 from ..core.lock_file import read_flake_inputs
 from ..core.models import FlakeInput

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import difflib
 import os
-from typing import List, Optional
+from typing import Optional
 
 import typer
 

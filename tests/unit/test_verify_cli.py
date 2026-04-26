@@ -87,9 +87,7 @@ def test_verify_locked_rev_too_new(mock_git_ops):
                 }
             )
         )
-        result = runner.invoke(
-            app, ["--min-age", "30", str(flake_path)]
-        )
+        result = runner.invoke(app, ["--min-age", "30", str(flake_path)])
         assert result.exit_code == 1
         assert "pkg" in result.stdout
         # Check that deviation is shown (negative value)
@@ -120,9 +118,7 @@ def test_verify_no_locked_rev(mock_git_ops):
                 }
             )
         )
-        result = runner.invoke(
-            app, ["--min-age", "30", str(flake_path)]
-        )
+        result = runner.invoke(app, ["--min-age", "30", str(flake_path)])
         assert result.exit_code == 1
         assert "No locked revision" in result.stdout or "error" in result.stdout.lower()
 
@@ -152,9 +148,7 @@ def test_verify_timestamp_fetch_fails(mock_git_ops):
                 }
             )
         )
-        result = runner.invoke(
-            app, ["--min-age", "30", str(flake_path)]
-        )
+        result = runner.invoke(app, ["--min-age", "30", str(flake_path)])
         assert result.exit_code == 1
 
 
@@ -219,9 +213,7 @@ def test_verify_deviation_display(mock_git_ops):
             )
         )
         # With min-age=5, deviation should be +5 (10-5=5)
-        result = runner.invoke(
-            app, ["--min-age", "5", str(flake_path)]
-        )
+        result = runner.invoke(app, ["--min-age", "5", str(flake_path)])
         assert result.exit_code == 0
         # Should show +5 deviation (positive = over min-age)
         assert "+5" in result.stdout or "Deviation" in result.stdout

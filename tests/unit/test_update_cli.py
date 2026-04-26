@@ -146,7 +146,11 @@ def test_cli_updates_to_newest_qualified_commit(mock_git_ops):
 
     m_resolve.return_value = "main"
     m_ts.return_value = {"ok": True, "timestamp": ten_days_ago}
-    m_find.return_value = {"ok": True, "rev": "five_day_rev", "timestamp": five_days_ago}
+    m_find.return_value = {
+        "ok": True,
+        "rev": "five_day_rev",
+        "timestamp": five_days_ago,
+    }
 
     flake_lock_content = {
         "nodes": {
@@ -179,7 +183,7 @@ def test_cli_skips_path_inputs_and_outputs_overrides(mock_git_ops):
     runner = CliRunner()
     m_resolve, m_ts, m_find = mock_git_ops
     m_resolve.return_value = "main"
-    
+
     # Simulate that find returns a newer commit than currently locked.
     # locked rev is "abcd", find returns "newer_rev".
     m_ts.return_value = {"ok": True, "timestamp": 1_600_000_000}

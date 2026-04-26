@@ -9,14 +9,11 @@ from __future__ import annotations
 import sys
 import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from .base import (
     GitBackend,
-    GitBackendError,
     GitNotFoundError,
-    FetchError,
     ResolveRefError,
 )
 from .registry import register_backend
@@ -31,6 +28,7 @@ def _get_pygit2():
     if _pygit2 is None:
         try:
             import pygit2 as _pygit2_module
+
             _pygit2 = _pygit2_module
         except ImportError:
             pass
@@ -40,12 +38,12 @@ def _get_pygit2():
 @register_backend
 class Pygit2Backend(GitBackend):
     """Git backend using pygit2 library."""
-    
+
     name = "pygit2"
-    
+
     def __init__(self, timeout: int = 120, verbose: bool = False, **kwargs):
         """Initialize the pygit2 backend.
-        
+
         Args:
             timeout: Default timeout for operations.
             verbose: If True, log debug info to stderr.
@@ -54,23 +52,23 @@ class Pygit2Backend(GitBackend):
         super().__init__(timeout=timeout)
         self._available: Optional[bool] = None
         self._verbose = verbose
-    
+
     def is_available(self) -> bool:
         """Check if pygit2 is available."""
         if self._available is not None:
             return self._available
         self._available = _get_pygit2() is not None
         return self._available
-    
+
     def _create_callbacks(self, timeout: int):
         """Create remote callbacks for authentication."""
         pygit2 = _get_pygit2()
         if pygit2 is None:
             raise GitNotFoundError("pygit2 not available")
-        
+
         # Create basic callbacks
         return pygit2.RemoteCallbacks()
-    
+
     def get_commit_timestamp(
         self,
         git_url: str,
@@ -81,7 +79,7 @@ class Pygit2Backend(GitBackend):
         pygit2 = _get_pygit2()
         if pygit2 is None:
             return {"ok": False, "error": "pygit2 not available"}
-        
+
         with tempfile.TemporaryDirectory() as tmpdir:
             try:
                 # Clone with depth 1
@@ -91,7 +89,7 @@ class Pygit2Backend(GitBackend):
                     depth=1,
                     checkout_branch=rev if not self._is_sha(rev) else None,
                 )
-                
+
                 # Get the commit
                 if self._is_sha(rev):
                     # Fetch the specific SHA
@@ -99,25 +97,30 @@ class Pygit2Backend(GitBackend):
                     if commit is None:
                         # Try to fetch it
                         for remote in repo.remotes:
-                            remote.fetch([rev], callbacks=self._create_callbacks(timeout or self.timeout))
+                            remote.fetch(
+                                [rev],
+                                callbacks=self._create_callbacks(
+                                    timeout or self.timeout
+                                ),
+                            )
                         commit = repo.get(rev)
                         if commit is None:
                             return {"ok": False, "error": f"Commit {rev} not found"}
                 else:
                     # Use HEAD or branch
                     commit = repo.head.peel(pygit2.Commit)
-                
+
                 return {
                     "ok": True,
                     "timestamp": commit.commit_time,
                     "rev": commit.hex,
                 }
-                
+
             except pygit2.GitError as e:
                 return {"ok": False, "error": f"Git error: {e}"}
             except Exception as e:
                 return {"ok": False, "error": f"Error: {e}"}
-    
+
     def resolve_default_ref(
         self,
         git_url: str,
@@ -127,11 +130,11 @@ class Pygit2Backend(GitBackend):
         """Resolve the default reference for a repository."""
         if ref:
             return ref
-        
+
         pygit2 = _get_pygit2()
         if pygit2 is None:
             raise GitNotFoundError("pygit2 not available")
-        
+
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 # Clone with depth 1 without checkout
@@ -141,27 +144,27 @@ class Pygit2Backend(GitBackend):
                     depth=1,
                     checkout=False,
                 )
-                
+
                 # Check HEAD reference
                 head = repo.head
                 if head.target:
                     # Extract branch name from ref
                     target_str = str(head.target)
                     if target_str.startswith("refs/heads/"):
-                        return target_str[len("refs/heads/"):]
-                
+                        return target_str[len("refs/heads/") :]
+
                 # Fallback to main/master detection
                 for ref_name in repo.references:
                     if ref_name == "refs/heads/main":
                         return "main"
                     if ref_name == "refs/heads/master":
                         return "master"
-                
+
                 return "main"
-                
+
         except pygit2.GitError as e:
             raise ResolveRefError(f"Failed to resolve default ref: {e}")
-    
+
     def find_oldest_commit_meeting_age(
         self,
         git_url: str,
@@ -178,16 +181,22 @@ class Pygit2Backend(GitBackend):
         pygit2 = _get_pygit2()
         if pygit2 is None:
             return {"ok": False, "error": "pygit2 not available"}
-        
+
         now_ts = int((now or datetime.now(timezone.utc)).timestamp())
         cutoff_ts = now_ts - min_age_days * 86_400
-        
+
         resolved_ref = ref or self.resolve_default_ref(git_url, timeout=timeout)
-        
+
         if verbose or self._verbose:
-            print(f"[DEBUG] [pygit2] git_url={git_url}, ref={ref} -> resolved_ref={resolved_ref}", file=sys.stderr)
-            print(f"[DEBUG] [pygit2] cutoff_ts={cutoff_ts} ({min_age_days}d ago)", file=sys.stderr)
-        
+            print(
+                f"[DEBUG] [pygit2] git_url={git_url}, ref={ref} -> resolved_ref={resolved_ref}",
+                file=sys.stderr,
+            )
+            print(
+                f"[DEBUG] [pygit2] cutoff_ts={cutoff_ts} ({min_age_days}d ago)",
+                file=sys.stderr,
+            )
+
         with tempfile.TemporaryDirectory() as tmpdir:
             try:
                 # Clone with initial depth
@@ -196,36 +205,39 @@ class Pygit2Backend(GitBackend):
                 found_ts: Optional[int] = None
                 head_sha: Optional[str] = None
                 head_ts: Optional[int] = None
-                
+
                 while depth <= max_depth:
                     if verbose or self._verbose:
-                        print(f"[DEBUG] [pygit2] Cloning with depth={depth}...", file=sys.stderr)
-                    
+                        print(
+                            f"[DEBUG] [pygit2] Cloning with depth={depth}...",
+                            file=sys.stderr,
+                        )
+
                     repo = pygit2.clone_repository(
                         git_url,
                         tmpdir,
                         depth=depth,
                         checkout_branch=resolved_ref,
                     )
-                    
+
                     # Walk commits from newest to oldest (strictly time-sorted)
                     commits = []
-                    walker = repo.walk(
-                        repo.head.target,
-                        pygit2.GIT_SORT_TIME
-                    )
-                    
+                    walker = repo.walk(repo.head.target, pygit2.GIT_SORT_TIME)
+
                     for commit in walker:
                         commits.append((commit.hex, commit.commit_time))
-                    
+
                     if not commits:
                         return {"ok": False, "error": "No commits found"}
-                    
+
                     head_sha, head_ts = commits[0]  # First is newest
-                    
+
                     if verbose or self._verbose:
-                        print(f"[DEBUG] [pygit2] Got {len(commits)} commits, head_ts={head_ts}", file=sys.stderr)
-                    
+                        print(
+                            f"[DEBUG] [pygit2] Got {len(commits)} commits, head_ts={head_ts}",
+                            file=sys.stderr,
+                        )
+
                     # Find the newest commit that meets the age requirement
                     found_sha = None
                     found_ts = None
@@ -234,29 +246,39 @@ class Pygit2Backend(GitBackend):
                             found_sha = sha
                             found_ts = ts
                             break
-                    
+
                     if found_sha:
                         if verbose or self._verbose:
-                            print(f"[DEBUG] [pygit2] Found commit {found_sha[:8]} ts={found_ts} (meets {min_age_days}d)", file=sys.stderr)
+                            print(
+                                f"[DEBUG] [pygit2] Found commit {found_sha[:8]} ts={found_ts} (meets {min_age_days}d)",
+                                file=sys.stderr,
+                            )
                         break
-                    
+
                     if verbose or self._verbose:
-                        print(f"[DEBUG] [pygit2] No commit met age requirement, increasing depth...", file=sys.stderr)
-                    
+                        print(
+                            "[DEBUG] [pygit2] No commit met age requirement, increasing depth...",
+                            file=sys.stderr,
+                        )
+
                     # Check if we've reached the end
                     commit_count = len(commits)
                     if commit_count < depth:
                         if verbose or self._verbose:
-                            print(f"[DEBUG] [pygit2] Reached end of history ({commit_count} commits)", file=sys.stderr)
+                            print(
+                                f"[DEBUG] [pygit2] Reached end of history ({commit_count} commits)",
+                                file=sys.stderr,
+                            )
                         break
-                    
+
                     depth = min(depth * 2, max_depth)
-                    
+
                     # Clean up for next iteration
                     import shutil
+
                     shutil.rmtree(tmpdir)
                     tmpdir = tempfile.mkdtemp()
-                
+
                 if found_sha and found_ts:
                     dt = datetime.fromtimestamp(found_ts, tz=timezone.utc)
                     return {
@@ -270,9 +292,13 @@ class Pygit2Backend(GitBackend):
                         "too_new_timestamp": None,
                         "too_new_date": None,
                     }
-                
+
                 # No commit old enough
-                dt = datetime.fromtimestamp(head_ts, tz=timezone.utc) if head_ts else None
+                dt = (
+                    datetime.fromtimestamp(head_ts, tz=timezone.utc)
+                    if head_ts
+                    else None
+                )
                 return {
                     "ok": False,
                     "rev": None,
@@ -284,12 +310,12 @@ class Pygit2Backend(GitBackend):
                     "too_new_timestamp": head_ts,
                     "too_new_date": dt.strftime("%Y-%m-%d %H:%M UTC") if dt else None,
                 }
-                
+
             except pygit2.GitError as e:
                 return {"ok": False, "error": f"Git error: {e}"}
             except Exception as e:
                 return {"ok": False, "error": f"Error: {e}"}
-    
+
     @staticmethod
     def _is_sha(s: str) -> bool:
         """Check if string looks like a SHA hash."""

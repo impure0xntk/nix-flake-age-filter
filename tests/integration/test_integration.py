@@ -11,7 +11,7 @@ import unittest
 import shutil
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from typer.testing import CliRunner
 
 # Add the project src directory to PYTHONPATH
@@ -33,10 +33,7 @@ class TestEndToEndWorkflow(unittest.TestCase):
         lock_content = {
             "nodes": {
                 "root": {
-                    "inputs": {
-                        "example": "inputs/example",
-                        "another": "inputs/another"
-                    }
+                    "inputs": {"example": "inputs/example", "another": "inputs/another"}
                 },
                 "inputs/example": {
                     "locked": {
@@ -93,7 +90,6 @@ class TestEndToEndWorkflow(unittest.TestCase):
             "timestamp": 1_600_000_000,
         }
 
-
         # ---- Verify ----
         result_verify = self.runner.invoke(
             verify_app, ["--min-age", "10", "--json", str(self.lock_path)]
@@ -104,6 +100,7 @@ class TestEndToEndWorkflow(unittest.TestCase):
             if result_verify.exception:
                 print(f"Verify exception: {result_verify.exception}")
                 import traceback
+
                 traceback.print_exception(
                     type(result_verify.exception),
                     result_verify.exception,

@@ -5,7 +5,6 @@ returns the NEWEST commit meeting the age requirement when walking commits
 from newest to oldest.
 """
 
-import pytest
 from datetime import datetime, timezone
 from unittest import mock
 
@@ -109,11 +108,13 @@ def make_backend_with_commits(commits_data):
                 "date": "",
                 "error": f"No commit older than {min_age_days} days found",
                 "too_new_commit": newest_commit.hex if newest_commit else None,
-                "too_new_timestamp": newest_commit.commit_time if newest_commit else None,
+                "too_new_timestamp": newest_commit.commit_time
+                if newest_commit
+                else None,
                 "too_new_date": (
-                    datetime.fromtimestamp(newest_commit.commit_time, tz=timezone.utc).strftime(
-                        "%Y-%m-%d %H:%M UTC"
-                    )
+                    datetime.fromtimestamp(
+                        newest_commit.commit_time, tz=timezone.utc
+                    ).strftime("%Y-%m-%d %H:%M UTC")
                     if newest_commit
                     else None
                 ),
@@ -146,9 +147,7 @@ def test_returns_newest_when_cutoff_exactly_matches():
     """If a commit is exactly at cutoff, it should be returned."""
     # cutoff: 10 days ago
     # commits: older (15 days), exact (10 days), newer (9 days)
-    backend = make_backend_with_commits(
-        [("older", 15), ("exact", 10), ("newer", 9)]
-    )
+    backend = make_backend_with_commits([("older", 15), ("exact", 10), ("newer", 9)])
 
     result = backend.find_oldest_commit_meeting_age(
         git_url="https://example.com/repo.git",
