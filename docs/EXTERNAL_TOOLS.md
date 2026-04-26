@@ -7,7 +7,6 @@
 | `rich` | Pretty console output and tables | >=13.0 |
 | `whenever` | UTC datetime handling (Instant) | >=0.3 |
 | `typer` | CLI framework for verify/update subcommands | >=0.12 |
-| `pygit2` | Git operations via libgit2 (optional backend) | >=1.14 |
 | `requests` | HTTP requests for GitHub API backend | >=2.31 |
 | `pytest` | Test framework | >=7.0 |
 | `mypy` | Static type checking | >=1.0 |
@@ -23,11 +22,6 @@ These tools are used directly or as dependencies of the `nix-flake-age-filter` p
 ### subprocess backend (default)
 - No additional dependencies beyond `git` CLI
 - Uses `subprocess` module to call git commands
-
-### pygit2 backend
-- Requires `pygit2` package
-- System library `libgit2` must be installed
-- Faster than subprocess for bulk operations
 
 ### github backend
 - Requires `requests` package

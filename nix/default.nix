@@ -2,7 +2,6 @@
 , python
 , rich
 , typer
-, pygit2
 , requests
 , click
 , shellingham
@@ -20,7 +19,7 @@ python.pkgs.buildPythonPackage rec {
 
   nativeBuildInputs = [ python.pkgs.hatchling ];
 
-  propagatedBuildInputs = [ rich typer pygit2 requests whenever click shellingham typing-extensions ];
+  propagatedBuildInputs = [ rich typer requests whenever click shellingham typing-extensions ];
 
   checkPhase = ''
     ${python.interpreter} -c "from flake_age_filter.cli.main import app; print('import ok')"

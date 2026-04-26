@@ -63,7 +63,7 @@ def set_backend(
     """Set the global backend by name.
 
     Args:
-        name: Backend name ("subprocess", "pygit2", "github", "auto").
+        name: Backend name ("subprocess", "github", "auto").
         token: Optional GitHub token for higher rate limits (GitHub backend only).
         verbose: If True, log rate limit info to stderr (GitHub backend only).
         **kwargs: Additional arguments for backend constructor.
@@ -136,7 +136,7 @@ def get_commit_timestamp(
         git_url: Git URL of the repository
         ref: Revision to get timestamp for (SHA, branch, tag)
         timeout: Request timeout in seconds
-        method: Backend method to use ("subprocess", "pygit2", "github", "auto")
+        method: Backend method to use ("subprocess", "github", "auto")
 
     Returns:
         Dict with keys: ok, timestamp, error, rev
@@ -202,7 +202,7 @@ def resolve_default_ref(
         git_url: Git URL of the remote
         ref: Optional explicit ref to resolve
         timeout: Request timeout in seconds
-        method: Backend method to use ("subprocess", "pygit2", "github", "auto")
+        method: Backend method to use ("subprocess", "github", "auto")
 
     Returns:
         Resolved ref name
@@ -251,7 +251,7 @@ def find_oldest_commit_meeting_age(
         min_depth: Minimum fetch depth
         max_depth: Maximum fetch depth
         timeout: Request timeout in seconds
-        method: Method to use: "github", "pygit2", "subprocess", "auto"
+        method: Method to use: "github", "subprocess", "auto"
         now: Override current time for reproducible checks
         verbose: Enable debug output to stderr
 

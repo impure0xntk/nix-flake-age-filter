@@ -36,7 +36,6 @@ src/
     │       ├── __init__.py   # Backend registry and auto-selection
     │       ├── base.py       # Abstract base class (GitBackend)
     │       ├── github_api_backend.py  # GitHub REST API backend
-    │       ├── pygit2_backend.py     # pygit2 (libgit2) backend
     │       ├── subprocess_backend.py  # Git CLI subprocess backend (default)
     │       └── registry.py   # Backend registration and lookup
     └── output/               # Output formatting
@@ -50,7 +49,7 @@ src/
 flowchart TD
     A[Parse flake.lock] --> B[Extract FlakeInput objects]
     B --> C{Select backend}
-    C -->|auto| D[Auto-select: github > pygit2 > subprocess]
+    C -->|auto| D[Auto-select: github > subprocess]
     C -->|explicit| E[Use specified backend]
     D --> F[Get commit timestamp]
     E --> F
@@ -72,7 +71,6 @@ flowchart TD
 | `rich` | Colored CLI output and tables | Used in output/formatters.py |
 | `whenever` | UTC datetime handling (Instant) | **Adopted**: replaces stdlib datetime |
 | `typer` | CLI framework | Builds the `verify` and `update` subcommands |
-| `pygit2` | Git operations via libgit2 | Optional: faster than subprocess |
 | `requests` | HTTP requests for GitHub API | Used in github_api_backend.py |
 | `click` | Underlying CLI library for Typer | Transitive dependency |
 | `shellingham` | Shell detection for Typer | Transitive dependency |
@@ -83,16 +81,15 @@ flowchart TD
 The tool uses a pluggable backend system (`core/backends/`) to fetch commit timestamps:
 
 ### Available Backends
+
 - **subprocess** (default): Uses `git` CLI commands. No extra dependencies.
-- **pygit2**: Uses `pygit2` library (libgit2 bindings). Faster, but requires `libgit2` system library.
 - **github**: Uses GitHub REST API v3. Requires network access; supports `GITHUB_TOKEN` for higher rate limits.
-- **auto**: Automatically selects backend based on availability (github → pygit2 → subprocess).
+- **auto**: Automatically selects backend based on availability (github → subprocess).
 
 ### Backend Selection
 ```bash
 # Explicit backend selection
 nix-flake-age verify --min-age 30 --method subprocess flake.lock
-nix-flake-age verify --min-age 30 --method pygit2 flake.lock
 nix-flake-age verify --min-age 30 --method github flake.lock
 
 # Auto-selection (default)
@@ -162,7 +159,7 @@ This project only operates on UTC moments-in-time.
 | `--min-age DAYS` | Minimum commit age in days (required) |
 | `--timeout SECONDS` | Network/git timeout (default: 120) |
 | `--parallel N` | Number of parallel workers (default: 4, 0=serial) |
-| `--method METHOD` | Backend: subprocess, pygit2, github, auto (default) |
+| `--method METHOD` | Backend: subprocess, github, auto (default) |
 | `--github-token TOKEN` | GitHub token for API (or set GITHUB_TOKEN env) |
 | `--json` | Output results as JSON |
 | `--verbose` | Show detailed progress information |
@@ -183,7 +180,7 @@ This project only operates on UTC moments-in-time.
 - Legacy files `flake_age_common.py`, `nix_flake_age_filter.py`, `nix_flake_age_update.py` have been removed.
 - All logic now resides in `src/flake_age_filter/` with clear separation of concerns.
 - The `whenever` library is **fully adopted** (replaces stdlib `datetime`).
-- Backend system implemented with 3 backends + auto-selection.
+- Backend system implemented with 2 backends + auto-selection.
 - Parallel execution via `core/parallel.py` using `ThreadPoolExecutor`.
 
 ## Testing

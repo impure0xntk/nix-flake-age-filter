@@ -119,11 +119,11 @@
         {
           default = pkgs.callPackage ./nix/default.nix {
             inherit lib python;
-            inherit (python.pkgs) rich typer pygit2 requests click shellingham typing-extensions whenever;
+            inherit (python.pkgs) rich typer requests click shellingham typing-extensions whenever;
           };
           nix-flake-age = pkgs.callPackage ./nix/default.nix {
             inherit lib python;
-            inherit (python.pkgs) rich typer pygit2 requests click shellingham typing-extensions whenever;
+            inherit (python.pkgs) rich typer requests click shellingham typing-extensions whenever;
           };
         });
 

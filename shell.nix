@@ -4,7 +4,7 @@ let
   python = pkgs.python3;
   myPackage = pkgs.callPackage ./nix/default.nix {
     inherit python;
-    inherit (python.pkgs) rich typer pygit2 requests click shellingham typing-extensions whenever;
+    inherit (python.pkgs) rich typer requests click shellingham typing-extensions whenever;
   };
 in
 pkgs.mkShell {
