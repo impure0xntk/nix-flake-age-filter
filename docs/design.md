@@ -1,104 +1,152 @@
-# Architecture Design Document
+# Nix Flake Age Filter — Design Document
 
 ## Overview
 
-A tool that validates the commit dates of each input in a Nix Flake's `flake.lock`, allowing only commits older than a specified number of days.
-This provides a concept equivalent to npm's `min-release-age` for the Nix ecosystem.
+A CLI toolkit that validates and enforces minimum-release-age checks on Nix flake inputs, inspired by npm v11.10.0's `min-release-age` feature. It inspects each input's commit date in `flake.lock` and ensures all entries are older than a configurable threshold, providing supply-chain security through freshness gating.
 
-It provides two subcommands:
+## Commands
 
 | Subcommand | Description |
-|------------|-------------|
-| `verify`   | Validates whether existing `flake.lock` inputs meet the minimum age requirement |
-| `update`   | Wraps `nix flake update` to adopt only commits that meet the minimum age requirement |
+|---|---|
+| `verify` | Validates existing `flake.lock` inputs against the minimum age requirement |
+| `update` | Wraps `nix flake update` to adopt only commits that satisfy the minimum age |
 
 ## Directory Structure
 
 ```
 src/
-└── flake_age_filter/         # Core implementation (Typer CLI, core utils)
-    ├── cli/                  # Typer commands (verify, update)
+└── flake_age_filter/
+    ├── cli/                        # Typer CLI commands
     │   ├── __init__.py
-    │   ├── _common.py        # Shared CLI utilities (backend setup, token handling)
-    │   ├── main.py           # Top-level Typer app
-    │   ├── verify.py         # Verify subcommand
-    │   └── update.py         # Update subcommand
-    ├── core/                 # Core logic and utilities
-    │   ├── __init__.py       # Re-exports backend system (getBackend, listBackends)
-    │   ├── age_check.py      # Age validation logic (uses whenever.Instant)
-    │   ├── errors.py         # Custom exception types (FlakeAgeError)
-    │   ├── flake_input.py    # Flake input representation and processing
-    │   ├── git_ops.py        # Git operations facade (delegates to backends)
-    │   ├── lock_file.py      # flake.lock parsing and input extraction
-    │   ├── models.py         # Data models (FlakeInput dataclass)
-    │   ├── parallel.py       # Parallel execution utilities (ThreadPoolExecutor)
-    │   └── backends/         # Pluggable Git backend system
-    │       ├── __init__.py   # Backend registry and auto-selection
-    │       ├── base.py       # Abstract base class (GitBackend)
-    │       ├── github_api_backend.py  # GitHub REST API backend
-    │       ├── subprocess_backend.py  # Git CLI subprocess backend (default)
-    │       └── registry.py   # Backend registration and lookup
-    └── output/               # Output formatting
+    │   ├── main.py                 # Entry point, Typer app registration
+    │   ├── verify.py               # verify command
+    │   ├── update.py               # update command
+    │   └── _common.py             # CLI shared utilities
+    ├── core/                       # Core logic
+    │   ├── __init__.py
+    │   ├── models.py               # Data models (FlakeInput, etc.)
+    │   ├── age_check.py            # Age checking utilities
+    │   ├── lock_file.py            # flake.lock loading & parsing
+    │   ├── git_ops.py              # Git operations dispatcher
+    │   ├── flake_input.py          # FlakeInput dataclass
+    │   ├── parallel.py             # Parallel processing (ThreadPoolExecutor)
+    │   ├── errors.py               # Error definitions
+    │   └── backends/               # Backend implementations
+    │       ├── __init__.py
+    │       ├── base.py             # Abstract GitBackend base class
+    │       ├── registry.py         # Backend registry (auto-discovery)
+    │       ├── github_api_backend.py
+    │       └── subprocess_backend.py
+    └── output/                     # Output formatting
         ├── __init__.py
-        └── formatters.py     # Console and JSON output formatting (uses rich)
+        └── formatters.py          # Rich console + JSON output
 ```
 
-## Data Flow
+## Architecture & Data Flow
 
 ```mermaid
 flowchart TD
-    A[Parse flake.lock] --> B[Extract FlakeInput objects]
-    B --> C{Select backend}
-    C -->|auto| D[Auto-select: github > subprocess]
-    C -->|explicit| E[Use specified backend]
-    D --> F[Get commit timestamp]
-    E --> F
-    F --> G[check_age: compare with min-age]
-    G --> H{Pass?}
-    H -->|Yes| I[Emit OK status]
-    H -->|No| J[Update: find older commit]
-    J --> K[Override input via nix flake update]
-    I --> L[Output: JSON or rich table]
-    K --> L
+    A[flake.lock] --> B[lock_file.py: parse JSON]
+    B --> C[FlakeInput objects]
+    C --> D{Backend selection}
+    D -->|subprocess| E[git ls-remote / git fetch]
+    D -->|github-api| F[GitHub REST API]
+    E --> G[get_commit_timestamp]
+    F --> G
+    G --> H[age_check.py: compare now - min_age_days]
+    H --> I{Result}
+    I -->|PASS| J[Emit OK]
+    I -->|FAIL| K[verify: report failure]
+    I -->|FAIL + update| L[find_oldest_commit_meeting_age]
+    L --> M[Override input via nix flake update --override-input]
+    K --> N[Output: JSON or Rich table]
+    M --> N
 ```
 
-## External Dependencies
+## Core Modules
 
-| Dependency | Purpose | Notes |
-|------------|---------|-------|
-| `git` CLI | Fetch commits, list refs, get timestamps | Required for subprocess backend |
-| `nix` CLI | Optional: `flake update --override-input` | Fallback to git-only if absent |
-| `rich` | Colored CLI output and tables | Used in output/formatters.py |
-| `whenever` | UTC datetime handling (Instant) | **Adopted**: replaces stdlib datetime |
-| `typer` | CLI framework | Builds the `verify` and `update` subcommands |
-| `requests` | HTTP requests for GitHub API | Used in github_api_backend.py |
-| `click` | Underlying CLI library for Typer | Transitive dependency |
-| `shellingham` | Shell detection for Typer | Transitive dependency |
-| `typing-extensions` | Backport of typing features | For compatibility with Python 3.9+ |
+### 1. flake.lock Parsing (`core/lock_file.py`)
 
-## Backend System
+- Load `flake.lock` JSON
+- Extract `nodes` → list of `FlakeInput` objects
+- `FlakeInput` provides: `input_type`, `rev`, `ref`, `is_path`, `to_git_url()`, `to_flake_url()`
 
-The tool uses a pluggable backend system (`core/backends/`) to fetch commit timestamps:
+### 2. Git Backend System (`core/backends/`)
 
-### Available Backends
+Abstract base class `GitBackend` defines the interface:
 
-- **subprocess** (default): Uses `git` CLI commands. No extra dependencies.
-- **github**: Uses GitHub REST API v3 via `requests`. Uses `gh` CLI token (`gh auth token`) when available for authentication; falls back to `GITHUB_TOKEN` env var.
-- **auto**: Automatically selects backend based on availability (github → subprocess).
+| Method | Description |
+|---|---|
+| `get_commit_timestamp(git_url, rev, timeout)` | Returns `{"ok": bool, "timestamp": int, "rev": str}` |
+| `resolve_default_ref(git_url, ref, timeout)` | Resolves branch/tag to ref name |
+| `find_oldest_commit_meeting_age(...)` | Binary-searches commit history for an old-enough commit |
+| `list_refs(git_url, timeout)` | Optional: list all branches and tags |
 
-### Backend Selection
-```bash
-# Explicit backend selection
-nix-flake-age verify --min-age 30 --method subprocess flake.lock
-nix-flake-age verify --min-age 30 --method github flake.lock
+**Available backends:**
 
-# Auto-selection (default)
-nix-flake-age verify --min-age 30 flake.lock
-```
+| Backend | Selection key | Description |
+|---|---|---|
+| `SubprocessBackend` | `subprocess` | Uses `git` CLI (`ls-remote`, `fetch`) — required, always available |
+| `GitHubAPIBackend` | `github` | Uses GitHub REST API via `requests` — requires network, optional token |
+| Auto | `auto` | Selects GitHub API for `github.com` URLs when a token is available, falls back to subprocess |
 
-## Date/Time Handling (CRITICAL)
+Backend selection is handled by `core/git_ops.py`, which uses `registry.py` to instantiate the appropriate backend.
 
-All timestamps are handled as UTC moments-in-time using the `whenever` library (already adopted):
+### 3. Age Checking (`core/age_check.py`)
+
+- `check_age(commit_info, now, min_days)` → `{"ok": bool, "age_days": int, "commit_date": str}`
+- Uses `whenever.Instant` for all UTC datetime operations
+- `format_duration(seconds)` for human-readable output
+
+### 4. Update Logic (`cli/update.py`)
+
+For inputs that fail the age check:
+1. Call `backend.find_oldest_commit_meeting_age()` (binary search over commit history)
+2. Override the input via `nix flake update --override-input <name> <flake_url>#<rev>`
+3. If `nix` binary is absent, falls back to building `flake.lock` entries from git history directly
+
+### 5. Output Formatting (`output/formatters.py`)
+
+- **Console**: `rich` library for colored tables, progress bars, and status indicators
+- **JSON**: `--json` flag emits machine-readable output to stdout
+- **Stderr**: Progress and diagnostic messages go to stderr; final results to stdout
+
+### 6. Parallel Execution (`core/parallel.py`)
+
+- Uses `concurrent.futures.ThreadPoolExecutor` for concurrent age checks
+- Configurable via `--parallel N` CLI option
+
+## CLI Options
+
+### Global / Shared
+
+| Flag | Description |
+|---|---|
+| `--min-age DAYS` | Minimum commit age in days (required) |
+| `--timeout SECONDS` | Network/git timeout (default: 120) |
+| `--parallel N` | Number of parallel workers |
+| `--json` | Output results as JSON |
+| `--verbose` | Show detailed progress information |
+| `--current-date YYYY-MM-DD` | Override current date for reproducible checks |
+| `--method {auto,subprocess,github}` | Force a specific git backend |
+| `--github-token TOKEN` | GitHub token (or set `GITHUB_TOKEN`) |
+
+### `verify` specific
+
+| Flag | Description |
+|---|---|
+| `--inputs NAME` | Check only specific inputs (can be repeated) |
+| `--exclude INPUT` | Skip specific inputs (can be repeated) |
+
+### `update` specific
+
+| Flag | Description |
+|---|---|
+| `--dry-run` | Simulate only; no modifications |
+
+## Date/Time Handling (Critical)
+
+This project uses the `whenever` library exclusively for UTC datetime operations:
 
 ```python
 from whenever import Instant
@@ -115,76 +163,47 @@ instant = Instant.parse_iso("2026-04-26T12:00:00Z")
 # Extract epoch seconds
 epoch = instant.timestamp()
 
-# Formatting
-str(instant)  # ISO format
+# String representation
+str(instant)
+
+# Custom formatting
 instant.format("YYYY-MM-dd HH:mm UTC")
 ```
 
-**Never use**: `ZonedDateTime`, `PlainDateTime`, or any timezone-aware types.
-This project only operates on UTC moments-in-time.
+**Never use**: `ZonedDateTime`, `PlainDateTime`, `datetime.datetime`, or any timezone-aware types. This project operates only on UTC moments-in-time.
 
-## Key Data Flow Details
+## External Dependencies
 
-### 1. flake.lock Parsing (`core/lock_file.py`)
-- Load JSON, extract `nodes` → list of `FlakeInput` objects
-- `FlakeInput` dataclass provides convenience properties: `input_type`, `rev`, `ref`, `is_path`
-- URL construction via `to_git_url()` and `to_flake_url()` methods
+| Dependency | Purpose | Notes |
+|---|---|---|
+| `git` CLI | Commit retrieval, ref listing, timestamp extraction | Required — subprocess backend |
+| `nix` CLI | `flake update --override-input`, lock generation | Optional — fallback to git-only mode |
+| `rich` | Colored CLI output, tables, progress | Python package |
+| `typer` | CLI framework | |
+| `whenever` | UTC datetime handling (Instant only) | Fully adopted, replaces stdlib `datetime` |
+| `requests` | HTTP requests (GitHub API) | Python package |
+| `click` | Underlying CLI library for Typer | Transitive dependency |
+| `shellingham` | Shell detection for Typer | Transitive dependency |
+| `typing-extensions` | Type hint support | |
 
-### 2. Git Backend Resolution (`core/git_ops.py`)
-- `get_commit_timestamp(git_url, ref, timeout, method)` → `{"ok": bool, "timestamp": int, "rev": str}`
-- Backend auto-selection or explicit choice via `--method` CLI option
-- GitHub token via `--github-token` or `GITHUB_TOKEN` env var
+## Key Constraints
 
-### 3. Age Checking (`core/age_check.py`)
-- `check_age(commit, now, min_days)` → `{"ok": bool, "age_days": int, "commit_date": str}`
-- Uses `whenever.Instant` for all time calculations
-- `format_duration(seconds)` for human-readable output
+1. **Purity**: Nix flakes require reproducibility — no `builtins.currentTime`
+2. **Git protocol only**: No GitHub API keys required for basic operation; works with any git-compatible host
+3. **No narHash calculation**: Computed by `nix flake update`, never manually
+4. **Fallback support**: When `nix` binary is absent, builds `flake.lock` from git history directly
 
-### 4. Update Logic (`cli/update.py`)
-- For inputs failing age check, search for older commit:
-  - Backend's `find_oldest_commit_meeting_age()` method
-  - Binary search through commit history (backend-specific)
-- Override input via `nix flake update --override-input <name> <flake_url>`
+## Testing
 
-### 5. Output Formatting (`output/formatters.py`)
-- Console output: uses `rich` for colored tables and progress
-- JSON output: `--json` flag emits machine-readable JSON to stdout
-- Stderr: progress and debug information
-
-## CLI Options
-
-### Common Options (verify & update)
-| Flag | Description |
-|------|-------------|
-| `--min-age DAYS` | Minimum commit age in days (required) |
-| `--timeout SECONDS` | Network/git timeout (default: 120) |
-| `--parallel N` | Number of parallel workers (default: 4, 0=serial) |
-| `--method METHOD` | Backend: subprocess, github, auto (default) |
-| `--github-token TOKEN` | GitHub token for API (or set GITHUB_TOKEN env) |
-| `--json` | Output results as JSON |
-| `--verbose` | Show detailed progress information |
-
-### Verify-specific Options
-| Flag | Description |
-|------|-------------|
-| `--inputs NAME` | Check only specific inputs (can be repeated) |
-
-### Update-specific Options
-| Flag | Description |
-|------|-------------|
-| `--dry-run` | Simulate only; no modifications |
-| `--exclude INPUT` | Skip specific inputs (can be repeated) |
+- **Unit tests**: `tests/unit/` — mock `git_ops` and backend classes
+- **Integration tests**: `tests/integration/` — requires `git`, optional `nix`
+- **Test fixtures**: Sample `flake.lock` files in `tests/`
+- **Run**: `python -m pytest -q`
 
 ## Migration Notes
 
-- Legacy files `flake_age_common.py`, `nix_flake_age_filter.py`, `nix_flake_age_update.py` have been removed.
-- All logic now resides in `src/flake_age_filter/` with clear separation of concerns.
-- The `whenever` library is **fully adopted** (replaces stdlib `datetime`).
-- Backend system implemented with 2 backends + auto-selection.
-- Parallel execution via `core/parallel.py` using `ThreadPoolExecutor`.
-
-## Testing
-- Unit tests: `tests/unit/` (mock `git_ops` and backends)
-- Integration tests: `tests/integration/` (requires git, optional nix)
-- Test fixtures: Sample `flake.lock` files in `tests/`
-- Run: `python -m pytest -q`
+- Legacy files (`flake_age_common.py`, `nix_flake_age_filter.py`, `nix_flake_age_update.py`) have been removed
+- All logic now resides in `src/flake_age_filter/` with clear separation of concerns
+- `whenever` library is **fully adopted** (replaces stdlib `datetime`)
+- Backend system implemented with 2 backends + auto-selection registry
+- Parallel execution via `core/parallel.py` using `ThreadPoolExecutor`
