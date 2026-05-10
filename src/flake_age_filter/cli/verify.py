@@ -80,7 +80,7 @@ def _process_input(
         }
 
     age_res = check_age(ts, now_ts, min_age)
-    deviation = age_res["age_days"] - min_age  # 偏差：正＝超過、負＝不足
+    deviation = age_res["age_days"] - min_age  # deviation in days
     result: Dict[str, object] = {
         "ok": age_res["ok"],
         "input": inp.name,
